@@ -2,7 +2,7 @@
 Install [uv](https://docs.astral.sh/uv/) package manager.
 
 ## Installation
-Clone and the repository and sync with the `uv` virtual environment.
+Clone the repository and sync with the `uv` virtual environment.
 ```
 git clone git@github.com:ramonamezquita/vnn.git
 cd vnn
