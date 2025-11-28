@@ -26,6 +26,7 @@ Available scripts:
 Estimates the mean and the variance of the probability distribution of the target as a function of the input, given a Gaussian target error-distribution model.
 
 **References**
+
 [1] Balaji Lakshminarayanan, Alexander Pritzel, and Charles Blundell. Simple and scalable predictive un-certainty estimation using deep ensembles, 2017.
 
 [2] David A. Nix and Andreas S. Weigend. Estimating the mean and variance of the target probability
