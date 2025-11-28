@@ -128,7 +128,7 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-if __name__ == "__main__":
+def main(args: argparse.Namespace) -> None:
     parser = create_parser()
     args = parser.parse_args()
 
@@ -162,3 +162,9 @@ if __name__ == "__main__":
         plt.plot(x, y)
         plt.plot(x, params[:, 0])
         plt.show()
+
+
+if __name__ == "__main__":
+    parser = create_parser()
+    args = parser.parse_args()
+    main(args)

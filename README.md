@@ -12,6 +12,6 @@ uv sync
 ## Entrypoints
 Entrypoints are located inside the `cli` directory and contain python scripts for training the available models. To ensure consistency with the projects dependencies, please run these scripts using `uv`.
 ```
-uv run src/vnn/cli/deep_ensemble.py -e 1000 --plot
+uv run src/vnn/cli/deep_ensemble.py --epochs 1000 --plot
 ```
 
