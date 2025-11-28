@@ -129,9 +129,6 @@ def create_parser() -> argparse.ArgumentParser:
 
 
 def main(args: argparse.Namespace) -> None:
-    parser = create_parser()
-    args = parser.parse_args()
-
     rngs = nnx.Rngs(args.seed)
     key = jax.random.PRNGKey(args.seed)
     x, y = xy_factory(args.dataset)()
