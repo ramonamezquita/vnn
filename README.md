@@ -16,7 +16,7 @@ uv run src/vnn/cli/deep_ensemble.py --epochs 1000 --plot
 ```
 
 Available scripts:
-- `deep_ensemble.py`: Minimizes negative likelihood function for both mean and variance simultaŒneously.
+- `deep_ensemble.py`: Minimizes negative likelihood function for both mean and variance simultaneously.
 
 
 
@@ -27,6 +27,7 @@ Estimates the mean and the variance of the probability distribution of the targe
 
 **References**
 [1] Balaji Lakshminarayanan, Alexander Pritzel, and Charles Blundell. Simple and scalable predictive un-certainty estimation using deep ensembles, 2017.
+
 [2] David A. Nix and Andreas S. Weigend. Estimating the mean and variance of the target probability
 distribution. Proceedings of 1994 IEEE International Conference on Neural Networks (ICNN’94), 1:55–
 60 vol.1, 1994
