@@ -1,3 +1,4 @@
+import argparse
 from typing import Callable
 
 import jax
@@ -6,9 +7,9 @@ import matplotlib.pyplot as plt
 import optax
 from flax import nnx
 
-from vbnn.activations import variance_activation
-from vbnn.criteria import normal_negative_log_likelihood
-from vbnn.xy import xy_factory
+from vnn.activations import variance_activation
+from vnn.criteria import normal_negative_log_likelihood
+from vnn.xy import xy_factory
 
 
 class Dense(nnx.Module):
@@ -84,10 +85,8 @@ def build_dense_nn(
     """
     sizes = (input_size,) + hidden_sizes + (output_size,)
     n_layers = len(sizes) - 1  # Total number of layers.
-    layers: list[Dense] = []
-
-    for i in range(n_layers):
-        dense = Dense(
+    layers: tuple[Dense, ...] = tuple(
+        Dense(
             in_features=sizes[i],
             out_features=sizes[i + 1],
             rngs=rngs,
@@ -95,7 +94,8 @@ def build_dense_nn(
             if i == n_layers - 1
             else hidden_activation_fn,
         )
-        layers.append(dense)
+        for i in range(n_layers)
+    )
 
     return nnx.Sequential(*layers)
 
@@ -115,11 +115,26 @@ def train_step(
     return loss
 
 
+def create_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-p", "--plot", action="store_true")
+    parser.add_argument("-s", "--seed", default=42, type=int, help="Random seed.")
+    parser.add_argument(
+        "-d", "--dataset", default="polynomial", type=str, help="Dataset to use."
+    )
+    parser.add_argument(
+        "-e", "--epochs", default=10000, type=int, help="Number of epochs."
+    )
+    return parser
+
+
 if __name__ == "__main__":
-    seed = 42
-    rngs = nnx.Rngs(seed)
-    key = jax.random.PRNGKey(seed)
-    x, y = xy_factory("polynomial")()
+    parser = create_parser()
+    args = parser.parse_args()
+
+    rngs = nnx.Rngs(args.seed)
+    key = jax.random.PRNGKey(args.seed)
+    x, y = xy_factory(args.dataset)()
 
     y += jnp.sqrt(0.01) * jax.random.normal(key, shape=y.shape)
 
@@ -131,9 +146,8 @@ if __name__ == "__main__":
         rngs=rngs,
     )
     optimizer = nnx.Optimizer(model, optax.adam(0.0001), wrt=nnx.Param)
-    loss = train_step(model, optimizer, x, y)
 
-    n_epochs = 15000
+    n_epochs = args.epochs
 
     for i in range(n_epochs):
         # Run the optimization for one step and make a stateful update to the following:
@@ -143,6 +157,8 @@ if __name__ == "__main__":
         print(f"[{i}] Loss: {loss}")
 
     params = model(x)
-    plt.plot(x, y)
-    plt.plot(x, params[:, 0])
-    plt.show()
+
+    if args.plot:
+        plt.plot(x, y)
+        plt.plot(x, params[:, 0])
+        plt.show()
