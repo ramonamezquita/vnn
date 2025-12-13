@@ -5,7 +5,7 @@ import jax.numpy as jnp
 
 
 class XYFactory(Protocol):
-    def __call__(self) -> tuple[jax.Array, jax.Array]: ...
+    def __call__(self, num: int) -> tuple[jax.Array, jax.Array]: ...
 
 
 def xy_factory(name: str) -> XYFactory:
@@ -19,7 +19,7 @@ def xy_factory(name: str) -> XYFactory:
         )
 
 
-def polynomial() -> tuple[jax.Array, jax.Array]:
-    x = jnp.linspace(start=0, stop=2, num=1000).reshape(-1, 1)
+def polynomial(num: int = 1000) -> tuple[jax.Array, jax.Array]:
+    x = jnp.linspace(start=0, stop=1.75, num=num).reshape(-1, 1)
     y = 2 * x**3 - 5 * x**2 + 3 * x + 7
     return x, y
