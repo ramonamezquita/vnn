@@ -17,6 +17,7 @@ import jax
 import jax.numpy as jnp
 import optax
 from flax import nnx
+from tqdm import trange
 
 
 def negative_log_likelihood(y_true: jax.Array, y_pred: jax.Array) -> jax.Array:
@@ -136,19 +137,16 @@ def train_loop(
     optimizer: nnx.Optimizer,
     n_epochs: int,
     update_fn: Callable,
+    desc: str = "Training"
 ) -> nnx.Module:
     """Generic training loop."""
-    try:
-        for epoch in range(n_epochs):
-            loss = update_fn(model, optimizer, x, y)
 
-            if epoch % 100 == 0:
-                print(f"[{epoch}] Train Loss: {loss:.4f}")
+    pbar = trange(n_epochs, desc=desc)
+    for _ in pbar:
+        loss = update_fn(model, optimizer, x, y)
+        pbar.set_postfix(loss=f"{loss:.4f}")
 
-        return model
-
-    except KeyboardInterrupt:
-        return model
+    return model
 
 
 def train_mve(
@@ -178,7 +176,9 @@ def train_mve(
         optimizer=optimizer,
         n_epochs=n_warmup_epochs,
         update_fn=update_mean_state_only,
+        desc="Stage 1 (warming up)"
     )
+    
 
     # Stage 2: Train in full.
     optimizer = nnx.Optimizer(warmed_up_model, optax.adam(learning_rate), wrt=nnx.Param)
@@ -189,6 +189,7 @@ def train_mve(
         optimizer=optimizer,
         n_epochs=n_epochs - n_warmup_epochs,
         update_fn=update_full_state,
+        desc="Stage 2 (full training)"
     )
 
     return finished_model, x, y
@@ -251,5 +252,4 @@ def main(args: argparse.Namespace) -> None:
 if __name__ == "__main__":
     parser = create_parser()
     args = parser.parse_args()
-    print(vars(args))
     main(args)

@@ -12,6 +12,7 @@ dependencies = [
     "ipython>=9.8.0",
     "jax>=0.8.1",
     "matplotlib>=3.10.7",
+    "tqdm>=4.67.1",
 ]
 
 [build-system]
