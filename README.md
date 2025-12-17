@@ -10,7 +10,7 @@ uv sync
 ```
 
 ## Entrypoints
-Entrypoints are located inside the `cli` directory and contain python scripts for training the available models. To ensure consistency with the projects dependencies, please run these scripts using `uv`. For example, the following command runs the MVE (Mean-Variance Estimation) training script and plots the results afterwards.
+Entrypoints are located inside the `src` directory and contain python scripts for training the available models. To ensure consistency with the projects dependencies, please run these scripts using `uv`. For example, the following command runs the MVE (Mean-Variance Estimation) training script and plots the results afterwards.
 ```
 uv run src/vnn/mve.py --n_total_epochs 10000 --n_warmup_epochs 5000 --plot
 ```
