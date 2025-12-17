@@ -176,7 +176,7 @@ def train_mve(
         optimizer=optimizer,
         n_epochs=n_warmup_epochs,
         update_fn=update_mean_state_only,
-        desc="Stage 1 (warming up)"
+        desc="Stage 1 (Fixed variance)"
     )
     
 
@@ -189,7 +189,7 @@ def train_mve(
         optimizer=optimizer,
         n_epochs=n_epochs - n_warmup_epochs,
         update_fn=update_full_state,
-        desc="Stage 2 (full training)"
+        desc="Stage 2 (Full model)"
     )
 
     return finished_model, x, y
