@@ -137,7 +137,7 @@ def train_loop(
     optimizer: nnx.Optimizer,
     n_epochs: int,
     update_fn: Callable,
-    desc: str = "Training"
+    desc: str = "Training",
 ) -> nnx.Module:
     """Generic training loop."""
 
@@ -159,6 +159,7 @@ def train_mve(
     n_samples = 500
     x = jnp.linspace(0, 2, n_samples).reshape(-1, 1)
     y = 2 * x**3 - 5 * x**2 + 3 * x + 7
+    y += 0.1 * jax.random.normal(key=jax.random.key(seed), shape=y.shape)
 
     # Mean-Variance Model.
     new_model = MVENetwork(rngs=nnx.Rngs(seed))
@@ -176,9 +177,8 @@ def train_mve(
         optimizer=optimizer,
         n_epochs=n_warmup_epochs,
         update_fn=update_mean_state_only,
-        desc="Stage 1 (Fixed variance)"
+        desc="Stage 1 (Mean)",
     )
-    
 
     # Stage 2: Train in full.
     optimizer = nnx.Optimizer(warmed_up_model, optax.adam(learning_rate), wrt=nnx.Param)
@@ -189,7 +189,7 @@ def train_mve(
         optimizer=optimizer,
         n_epochs=n_epochs - n_warmup_epochs,
         update_fn=update_full_state,
-        desc="Stage 2 (Full model)"
+        desc="Stage 2 (Mean + Variance)",
     )
 
     return finished_model, x, y
