@@ -15,6 +15,7 @@ from typing import Callable
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
 from flax import nnx
 from tqdm import trange
@@ -156,10 +157,16 @@ def train_mve(
     learning_rate: float = 0.001,
 ):
     # X,y
-    n_samples = 500
-    x = jnp.linspace(0, 2, n_samples).reshape(-1, 1)
-    y = 2 * x**3 - 5 * x**2 + 3 * x + 7
-    y += 0.1 * jax.random.normal(key=jax.random.key(seed), shape=y.shape)
+    n_samples = 5000
+    x = jnp.linspace(0, jnp.pi / 2, n_samples).reshape(-1, 1)
+
+    w_c = 5
+    w_m = 4
+    m_x = jnp.sin(w_m * x)
+    y = m_x * jnp.sin(w_c * x)
+    sigma2 = 0.02 + 0.02 * jnp.square(1 - m_x)
+    noise = np.random.normal(0, np.sqrt(sigma2))
+    y += noise
 
     # Mean-Variance Model.
     new_model = MVENetwork(rngs=nnx.Rngs(seed))
@@ -240,8 +247,8 @@ def main(args: argparse.Namespace) -> None:
         ub = mu_pred + 1.96 * jnp.sqrt(sigma2_pred)
 
         ax = plt.subplot()
-        ax.plot(x, y, label="True values")
-        ax.plot(x, mu_pred, label="Predicted values")
+        ax.scatter(x, y, label="Observations", s=2, c="black", alpha=0.1)
+        ax.plot(x, mu_pred, label="Network output")
         ax.plot(x, lb, ls="--", c="gray", label="95% CI")
         ax.plot(x, ub, ls="--", c="gray")
         plt.legend()
