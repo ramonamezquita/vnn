@@ -23,7 +23,8 @@ Available scripts:
 ## Models
 
 ### Mean-Variance Estimator
-Estimates the mean and the variance of the probability distribution of the target as a function of the input, given a Gaussian target error-distribution model.
+Estimates the mean and the variance of the probability distribution of the target as a function of the input, given a Gaussian target error-distribution model. The synthetic dataset is the same as in [1].
+
 
 **References**
 
