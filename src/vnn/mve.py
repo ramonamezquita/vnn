@@ -7,256 +7,312 @@ following the two steps approach described in [1].
 
 References
 ----------
-[1] David A. Nix and Andreas S. Weigend. Estimating the mean and variance of the target probability distribution.
+[1] Nix, D. A. and Weigend, A. S., "Estimating the mean and variance of the
+target probability distribution", Proceedings of 1994 IEEE International
+Conference on Neural Networks (ICNN'94), Orlando, FL, USA, 1994, pp. 55-60
+vol.1, doi: 10.1109/ICNN.1994.374138.
 """
 
-import argparse
-from typing import Callable
+from typing import Callable, Literal, Self
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 import optax
 from flax import nnx
+from sklearn.base import BaseEstimator, TransformerMixin
 from tqdm import trange
 
-
-def negative_log_likelihood(y_true: jax.Array, y_pred: jax.Array) -> jax.Array:
-    """Negative log likelihood for Normal distribution.
-
-    Parameters
-    ----------
-    y_true : jax.Array
-        Ground truth.
-
-    y_pred : jax.Array
-        Predicted values.
-    """
-    mu = y_pred[:, [0]]
-    sigma2 = sigma2_transformation(y_pred[:, [1]])
-    return jnp.mean(jnp.log(sigma2) + ((y_true - mu) ** 2 / sigma2))
+from vnn.datasets import get_dataset
+from vnn.main import RunParams
 
 
-def sigma2_transformation(x: jax.Array) -> jax.Array:
-    return nnx.softplus(x) + 1e-6
+def gaussian_nll_loss(
+    mean: jax.Array,
+    target: jax.Array,
+    var: jax.Array,
+    full: bool = False,
+) -> jax.Array:
+    """Compute the Gaussian negative log likelihood loss."""
 
-
-class MVENetwork(nnx.Module):
-    """Mean-Variance Estimation network.
-
-    Parameters
-    ----------
-    rngs: nnx.Rngs
-        RNGS key.
-    """
-
-    def __init__(self, *, rngs: nnx.Rngs):
-        self.mu_net = nnx.Sequential(
-            nnx.Linear(1, 100, rngs=rngs),
-            nnx.sigmoid,
-            nnx.Linear(100, 1, rngs=rngs),
-        )
-
-        self.sigma2_net = nnx.Sequential(
-            nnx.Linear(1, 100, rngs=rngs),
-            nnx.sigmoid,
-            nnx.Linear(100, 1, rngs=rngs),
-        )
-
-    def __call__(self, x: jax.Array) -> jax.Array:
-        return jnp.concat((self.mu_net(x), self.sigma2_net(x)), axis=1)
+    # Calculate the loss
+    loss = 0.5 * (jnp.log(var) + (mean - target) ** 2 / var)
+    if full:
+        loss += 0.5 * jnp.log(2 * jnp.pi)
+    return loss.mean()
 
 
 @nnx.jit
-def update_full_state(
-    model: nnx.Module,
-    optimizer: nnx.Optimizer,
-    x: jax.Array,
-    y: jax.Array,
-) -> jax.Array:
-    """Train for a single step.
+def train_step(
+    model: nnx.Module, optimizer: nnx.Optimizer, X: jax.Array, y: jax.Array
+) -> float:
+    """Performs a single training step on a batch.
 
-    This function takes a Module, an Optimizer, and a batch of data, and returns
-    the loss for that step. The loss and the gradients are computed using the
-    `nnx.value_and_grad` transform over the `loss_fn`. The gradients are passed to
-    the optimizer's update method to update the model's parameters.
+    Computes the loss, evaluates gradients, updates the model and
+    returns the scalar loss.
 
     Parameters
     ----------
     model : nnx.Module
-        Model to train.
+        Model to be trained.
 
-    optimizer: nnx.Optimizer
-        Optimizer for updating the model state.
+    optimizer : nnx.Optimizer
+        Optimizer used to update the model parameters.
 
-    x: jax.Array
-        Input values.
+    X : jax.Array
+        Input batch.
 
-    y: jax.Array
-        Target values. Used for computing the loss.
+    y : jax.Array
+        Target batch.
 
     Returns
     -------
-    loss : float
+    jax.Array
+        Scalar array.
     """
 
-    def loss_fn(model: MVENetwork) -> jax.Array:
-        return negative_log_likelihood(y_true=y, y_pred=model(x))
+    def loss_fn(model: nnx.Module):
+        output = model(X)
+        mean = output[:, 0]
+        var = output[:, 1]
+        return gaussian_nll_loss(mean, y, var)
 
-    loss, grads = nnx.value_and_grad(loss_fn)(model)
+    argnums = nnx.DiffState(0, optimizer.wrt)
+    loss, grads = nnx.value_and_grad(loss_fn, argnums=argnums)(model)
     optimizer.update(model, grads)
     return loss
 
 
-@nnx.jit
-def update_mean_state_only(
-    model: nnx.Module,
-    optimizer: nnx.Optimizer,
-    x: jax.Array,
-    y: jax.Array,
-) -> jax.Array:
-    """Updates the mean state only.
+class MLP(nnx.Module):
+    """One-hidden-layer feedforward network.
 
-    Similar logic as `update_full_state`, but here gradients are taken wrt to mean
-    related params only.
+    Parameters
+    ----------
+    n_features_in : int
+        Input feature dimension.
+
+    n_hidden_units : int
+        Hidden layer dimension.
+
+    n_features_out : int
+        Output feature dimension.
+
+    hidden_activation_fn : Callable, default=nnx.sigmoid
+        Activation function for hidden layer.
+
+    output_activation_fn: Callable, default=nnx.identity,
+        Output transformation function.
+
+    rngs : nnx.Rngs
+        Random number generators used for parameter initialization and
+        stochastic layers (e.g., dropout).
+
     """
 
-    def loss_fn(model: MVENetwork) -> jax.Array:
-        return negative_log_likelihood(y_true=y, y_pred=model(x))
+    def __init__(
+        self,
+        n_features_in: int,
+        n_hidden_units: int,
+        n_features_out: int,
+        hidden_activation_fn: Callable[[jax.Array], jax.Array] = nnx.sigmoid,
+        output_activation_fn: Callable[[jax.Array], jax.Array] = nnx.identity,
+        *,
+        rngs: nnx.Rngs,
+    ):
+        self.sequential = nnx.Sequential(
+            nnx.Linear(n_features_in, n_hidden_units, rngs=rngs),
+            hidden_activation_fn,
+            nnx.Linear(n_hidden_units, n_features_out, rngs=rngs),
+            output_activation_fn,
+        )
 
-    mu_net_params = nnx.All(nnx.Param, nnx.PathContains("mu_net"))
-    diff_state = nnx.DiffState(0, mu_net_params)
-    loss, grads = nnx.value_and_grad(loss_fn, argnums=diff_state)(model)
-    optimizer.update(model, grads)
-    return loss
-
-
-def train_loop(
-    model: nnx.Module,
-    x: jax.Array,
-    y: jax.Array,
-    optimizer: nnx.Optimizer,
-    n_epochs: int,
-    update_fn: Callable,
-    desc: str = "Training",
-) -> nnx.Module:
-    """Generic training loop."""
-
-    pbar = trange(n_epochs, desc=desc)
-    for _ in pbar:
-        loss = update_fn(model, optimizer, x, y)
-        pbar.set_postfix(loss=f"{loss:.4f}")
-
-    return model
+    def __call__(self, x: jax.Array) -> jax.Array:
+        return self.sequential(x)
 
 
-def train_mve(
-    seed: int = 42,
-    n_epochs: int = 100,
-    n_warmup_epochs: int = 50,
-    learning_rate: float = 0.001,
-):
-    # X,y
-    n_samples = 5000
-    x = jnp.linspace(0, jnp.pi / 2, n_samples).reshape(-1, 1)
+class MVE(nnx.Module):
+    """Mean-Variance-Estimation network.
 
-    w_c = 5
-    w_m = 4
-    m_x = jnp.sin(w_m * x)
-    y = m_x * jnp.sin(w_c * x)
-    sigma2 = 0.02 + 0.02 * jnp.square(1 - m_x)
-    noise = np.random.normal(0, np.sqrt(sigma2))
-    y += noise
+    Predicts the mean and variance of a scalar target.
+    The network outputs a two-dimensional array containing [mean, variance].
+
+    Parameters
+    ----------
+    n_hidden_units : int, optional
+        Number of hidden units in each subnetwork.
+
+    hidden_activation_fn : Callable, default=nnx.sigmoid
+        Activation function for hidden layer.
+
+    rngs : nnx.Rngs
+        Random number generator.
+
+    References
+    ----------
+    [1] Nix, D. A. and Weigend, A. S., "Estimating the mean and variance of the
+    target probability distribution", Proceedings of 1994 IEEE International
+    Conference on Neural Networks (ICNN'94), Orlando, FL, USA, 1994, pp. 55-60
+    vol.1, doi: 10.1109/ICNN.1994.374138.
+    """
+
+    def __init__(
+        self,
+        n_hidden_units: int = 10,
+        hidden_activation_fn: Callable[[jax.Array], jax.Array] = nnx.sigmoid,
+        *,
+        rngs: nnx.Rngs,
+    ):
+        self.mean = MLP(
+            n_features_in=1,
+            n_hidden_units=n_hidden_units,
+            n_features_out=1,
+            hidden_activation_fn=hidden_activation_fn,
+            rngs=rngs,
+        )
+        self.sigma2 = MLP(
+            n_features_in=1,
+            n_hidden_units=n_hidden_units,
+            n_features_out=1,
+            hidden_activation_fn=hidden_activation_fn,
+            output_activation_fn=nnx.softplus,
+            rngs=rngs,
+        )
+
+    def __call__(self, x: jax.Array) -> jax.Array:
+        return jnp.concat((self.mean(x), self.sigma2(x)), axis=1)
+
+
+class MVERegressor(BaseEstimator, TransformerMixin):
+    """Trainer for Mean-Variance-Estimation network.
+
+    Parameters
+    ----------
+    n_hidden_units : int, default=20
+        Number of hidden units.
+
+    n_total_epochs: int = 10000
+        Number of total epochs.
+
+    n_warmup_epochs: int = 5000
+        Number of warmup epochs.
+
+    learning_rate: float = 1e-3
+        Learning rate.
+
+    activation_fn : str, {"sigmoid", "relu"}, default="sigmoid"
+        Activation function for hidden layer.
+
+    rngs : nnx.Rngs
+        Random number generator.
+    """
+
+    name_to_function = {"sigmoid": nnx.sigmoid, "relu": nnx.relu}
+
+    def __init__(
+        self,
+        n_hidden_units: int = 10,
+        n_total_epochs: int = 5000,
+        n_warmup_epochs: int = 5000,
+        learning_rate: float = 1e-3,
+        activation_fn: Literal["sigmoid", "relu"] = "sigmoid",
+        *,
+        random_state: int = 42,
+    ):
+        self.n_hidden_units = n_hidden_units
+        self.n_total_epochs = n_total_epochs
+        self.n_warmup_epochs = n_warmup_epochs
+        self.learning_rate = learning_rate
+        self.activation_fn = activation_fn
+        self.random_state = random_state
+
+    def fit(self, X: jax.Array, y: jax.Array) -> Self:
+        # Create new MVE network.
+        model = MVE(
+            n_hidden_units=self.n_hidden_units,
+            hidden_activation_fn=self.name_to_function[self.activation_fn],
+            rngs=nnx.Rngs(self.random_state),
+        )
+
+        # Stage 1: Train keeping variance parameters fixed (warm-up stage).
+        # This is achieved by differentiating wrt to the mean-related params only.
+        # For more details on how to do this in flax see the following GitHub discussion:
+        # https://github.com/google/flax/issues/4167
+        mean_optimizer = nnx.Optimizer(
+            model,
+            optax.adam(self.learning_rate),
+            wrt=nnx.All(nnx.Param, nnx.PathContains("mean")),
+        )
+
+        model = self._fit_loop(
+            model, X, y, mean_optimizer, n_epochs=self.n_warmup_epochs, desc="Stage 1"
+        )
+
+        # Stage 2: Train in full.
+        # For subsequent training, all parameters (from both mean and sigma2 subnetworks)
+        # are updated until the total number of epochs is reached.
+        # NOTE: Training is resumed using a new `Optimizer` instance.
+        optimizer = nnx.Optimizer(model, optax.adam(self.learning_rate), wrt=nnx.Param)
+        model = self._fit_loop(
+            model,
+            X,
+            y,
+            optimizer,
+            n_epochs=self.n_total_epochs - self.n_warmup_epochs,
+            desc="Stage 2",
+        )
+
+        self.model_ = model
+
+        return self
+
+    def predict(self, X: jax.Array) -> jax.Array:
+        return self.model_(X)
+
+    def _fit_loop(
+        self,
+        model: MVE,
+        X: jax.Array,
+        y: jax.Array,
+        optimizer: nnx.Optimizer,
+        n_epochs: int,
+        desc: str,
+    ) -> MVE:
+        # pbar = trange(n_epochs, desc=desc)
+        for _ in range(n_epochs):
+            loss = train_step(model, optimizer, X, y)
+            # pbar.set_postfix(loss=f"{loss:.4f}")
+
+        return model
+
+
+def run(params: RunParams):
+    X, y = get_dataset(params.dataset)
 
     # Mean-Variance Model.
-    new_model = MVENetwork(rngs=nnx.Rngs(seed))
-
-    # Stage 1: Train keeping variance parameters fixed (warm-up stage).
-    # This is achieved by differentiating wrt to the mean-related params.
-    # For more details see the following GitHub discussion:
-    # https://github.com/google/flax/issues/4167
-    mu_net_params = nnx.All(nnx.Param, nnx.PathContains("mu_net"))
-    optimizer = nnx.Optimizer(new_model, optax.adam(learning_rate), wrt=mu_net_params)
-    warmed_up_model = train_loop(
-        new_model,
-        x,
-        y,
-        optimizer=optimizer,
-        n_epochs=n_warmup_epochs,
-        update_fn=update_mean_state_only,
-        desc="Stage 1 (Mean)",
+    regressor = MVERegressor(
+        n_hidden_units=params.n_hidden_units,
+        n_total_epochs=params.n_total_epochs,
+        n_warmup_epochs=params.n_warmup_epochs,
+        learning_rate=params.learning_rate,
+        random_state=params.seed,
     )
 
-    # Stage 2: Train in full.
-    optimizer = nnx.Optimizer(warmed_up_model, optax.adam(learning_rate), wrt=nnx.Param)
-    finished_model = train_loop(
-        warmed_up_model,
-        x,
-        y,
-        optimizer=optimizer,
-        n_epochs=n_epochs - n_warmup_epochs,
-        update_fn=update_full_state,
-        desc="Stage 2 (Mean + Variance)",
-    )
+    regressor.fit(X, y)
 
-    return finished_model, x, y
-
-
-def create_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-p", "--plot", action="store_true")
-    parser.add_argument("-s", "--seed", default=42, type=int, help="Random seed.")
-    parser.add_argument(
-        "-w",
-        "--n_warmup_epochs",
-        default=5_000,
-        type=int,
-        help="Number of warmup epochs.",
-    )
-    parser.add_argument(
-        "-e",
-        "--n_total_epochs",
-        default=10_000,
-        type=int,
-        help="Number of training epochs.",
-    )
-
-    parser.add_argument(
-        "-l", "--learning_rate", default=1e-3, type=float, help="Learning rate."
-    )
-
-    return parser
-
-
-def main(args: argparse.Namespace) -> None:
-    trained_model, x, y = train_mve(
-        seed=args.seed,
-        n_epochs=args.n_total_epochs,
-        n_warmup_epochs=args.n_warmup_epochs,
-        learning_rate=args.learning_rate,
-    )
-
-    if args.plot:
+    if params.plot:
         import matplotlib.pyplot as plt
 
-        y_pred = trained_model(x)
-        mu_pred = y_pred[:, 0]
-        sigma2_pred = sigma2_transformation(y_pred[:, 1])
-
-        lb = mu_pred - 1.96 * jnp.sqrt(sigma2_pred)
-        ub = mu_pred + 1.96 * jnp.sqrt(sigma2_pred)
+        y_pred = regressor.model_(X)
+        mean = y_pred[:, 0]
+        std = jnp.sqrt(y_pred[:, 1])
 
         ax = plt.subplot()
-        ax.scatter(x, y, label="Observations", s=2, c="black", alpha=0.1)
-        ax.plot(x, mu_pred, label="Network output")
-        ax.plot(x, lb, ls="--", c="gray", label="95% CI")
-        ax.plot(x, ub, ls="--", c="gray")
+        ax.scatter(X, y, label="Observations", s=2, c="black", alpha=0.1)
+        ax.plot(X[:, 0], mean, label="Network output", c="black")
+        ax.fill_between(
+            X[:, 0],
+            mean - 1.96 * std,
+            mean + 1.96 * std,
+            alpha=0.3,
+        )
         plt.legend()
-
         plt.show()
-
-
-if __name__ == "__main__":
-    parser = create_parser()
-    args = parser.parse_args()
-    main(args)
