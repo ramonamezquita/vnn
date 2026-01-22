@@ -1,5 +1,4 @@
 import argparse
-import importlib
 from dataclasses import asdict, dataclass
 
 from vnn.datasets import DATASETS
@@ -10,11 +9,14 @@ class RunParams:
     seed: int = 42
     n_total_epochs: int = 1000
     n_warmup_epochs: int = 500
-    n_models: int = 4
+    n_estimators: int = 4
     n_jobs: int = 4
     n_hidden_units: int = 20
-    sample_size: int = 1
+    activation_fn: str = "sigmoid"
+    bootstrap: bool = True
+    max_samples: int = 1
     learning_rate: float = 1e-3
+    verbose: int = 0
     dataset: str = "sinusoidal"
     plot: bool = False
 
@@ -26,14 +28,6 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--model",
-        type=str,
-        dest="model",
-        help="<Required> Name of the job to run.",
-        required=True,
-    )
-
-    parser.add_argument(
         "--seed",
         type=int,
         help="Random seed.",
@@ -41,10 +35,24 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--n_models",
+        "--n_total_epochs",
+        type=int,
+        help="Number of epochs.",
+        default=10000,
+    )
+
+    parser.add_argument(
+        "--n_warmup_epochs",
+        type=int,
+        help="Number of warmup epochs.",
+        default=5000,
+    )
+
+    parser.add_argument(
+        "--n_estimators",
         type=int,
         help="Number of models.",
-        default=10,
+        default=20,
     )
 
     parser.add_argument(
@@ -55,20 +63,6 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--n_total_epochs",
-        type=int,
-        help="Number of epochs.",
-        default=1000,
-    )
-
-    parser.add_argument(
-        "--n_warmup_epochs",
-        type=int,
-        help="Number of warmup epochs.",
-        default=500,
-    )
-
-    parser.add_argument(
         "--n_hidden_units",
         default=20,
         type=int,
@@ -76,8 +70,21 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--sample_size",
-        help="Sample size",
+        "--activation_fn",
+        type=str,
+        default="sigmoid",
+        help="Hidden activation function.",
+    )
+
+    parser.add_argument(
+        "--bootstrap",
+        action="store_true",
+        help="Whether samples are drawn with replacement.",
+    )
+
+    parser.add_argument(
+        "--max_samples",
+        help="The number of samples to draw from X to train each estimator",
         type=float,
         default=1.0,
     )
@@ -87,6 +94,13 @@ def create_parser() -> argparse.ArgumentParser:
         default=1e-3,
         type=float,
         help="Learning rate.",
+    )
+
+    parser.add_argument(
+        "--verbose",
+        type=int,
+        default=2,
+        help="Controls the verbosity when fitting and predicting.",
     )
 
     parser.add_argument(
@@ -107,28 +121,31 @@ def create_parser() -> argparse.ArgumentParser:
 
 def main():
     """Runs a job."""
+    from vnn import bagging
 
     parser = create_parser()
     args = parser.parse_args()
 
-    model_module = importlib.import_module(f"vnn.{args.model}")
     run_params = RunParams(
         seed=args.seed,
         n_total_epochs=args.n_total_epochs,
         n_warmup_epochs=args.n_warmup_epochs,
-        n_models=args.n_models,
+        n_estimators=args.n_estimators,
         n_jobs=args.n_jobs,
         n_hidden_units=args.n_hidden_units,
-        sample_size=args.sample_size,
+        activation_fn=args.activation_fn,
+        bootstrap=args.bootstrap,
+        max_samples=args.max_samples,
         learning_rate=args.learning_rate,
+        verbose=args.verbose,
         dataset=args.dataset,
         plot=args.plot,
     )
 
-    print(f"Called model `{args.model}` with parameters: {asdict(run_params)}")
+    print(f"Called main.py with parameters: {asdict(run_params)}")
 
     try:
-        model_module.run(run_params)
+        bagging.run(run_params)
     except Exception as exc:
         raise exc
 

@@ -20,10 +20,7 @@ import jax.numpy as jnp
 import optax
 from flax import nnx
 from sklearn.base import BaseEstimator, TransformerMixin
-from tqdm import trange
-
-from vnn.datasets import get_dataset
-from vnn.main import RunParams
+from sklearn.utils.validation import check_is_fitted
 
 
 def gaussian_nll_loss(
@@ -182,7 +179,14 @@ class MVE(nnx.Module):
 
 
 class MVERegressor(BaseEstimator, TransformerMixin):
-    """Trainer for Mean-Variance-Estimation network.
+    """Sklearn compatible Mean-Variance-Estimation network.
+
+    Training is performed in two stages: a warm-up phase where only the mean 
+    parameters are updated, followed by joint optimization of both mean and 
+    variance parameters.
+
+    Scikit-learn compatibility allows the estimator to be used with ensemble
+    methods such as bagging.
 
     Parameters
     ----------
@@ -203,6 +207,13 @@ class MVERegressor(BaseEstimator, TransformerMixin):
 
     rngs : nnx.Rngs
         Random number generator.
+
+
+    Example
+    -------
+    >>> from vnn.datasets import get_dataset
+    >>> X, y = get_dataset("sinusoidal")
+    >>> BaggingRegressor(MVERegressor(), n_estimators=10, random_state=0).fit(X, y)
     """
 
     name_to_function = {"sigmoid": nnx.sigmoid, "relu": nnx.relu}
@@ -241,9 +252,12 @@ class MVERegressor(BaseEstimator, TransformerMixin):
             optax.adam(self.learning_rate),
             wrt=nnx.All(nnx.Param, nnx.PathContains("mean")),
         )
-
-        model = self._fit_loop(
-            model, X, y, mean_optimizer, n_epochs=self.n_warmup_epochs, desc="Stage 1"
+        self._fit_loop(
+            model,
+            X,
+            y,
+            mean_optimizer,
+            n_epochs=self.n_warmup_epochs,
         )
 
         # Stage 2: Train in full.
@@ -251,13 +265,12 @@ class MVERegressor(BaseEstimator, TransformerMixin):
         # are updated until the total number of epochs is reached.
         # NOTE: Training is resumed using a new `Optimizer` instance.
         optimizer = nnx.Optimizer(model, optax.adam(self.learning_rate), wrt=nnx.Param)
-        model = self._fit_loop(
+        self._fit_loop(
             model,
             X,
             y,
             optimizer,
             n_epochs=self.n_total_epochs - self.n_warmup_epochs,
-            desc="Stage 2",
         )
 
         self.model_ = model
@@ -265,6 +278,7 @@ class MVERegressor(BaseEstimator, TransformerMixin):
         return self
 
     def predict(self, X: jax.Array) -> jax.Array:
+        check_is_fitted(self)
         return self.model_(X)
 
     def _fit_loop(
@@ -274,45 +288,6 @@ class MVERegressor(BaseEstimator, TransformerMixin):
         y: jax.Array,
         optimizer: nnx.Optimizer,
         n_epochs: int,
-        desc: str,
     ) -> MVE:
-        # pbar = trange(n_epochs, desc=desc)
         for _ in range(n_epochs):
-            loss = train_step(model, optimizer, X, y)
-            # pbar.set_postfix(loss=f"{loss:.4f}")
-
-        return model
-
-
-def run(params: RunParams):
-    X, y = get_dataset(params.dataset)
-
-    # Mean-Variance Model.
-    regressor = MVERegressor(
-        n_hidden_units=params.n_hidden_units,
-        n_total_epochs=params.n_total_epochs,
-        n_warmup_epochs=params.n_warmup_epochs,
-        learning_rate=params.learning_rate,
-        random_state=params.seed,
-    )
-
-    regressor.fit(X, y)
-
-    if params.plot:
-        import matplotlib.pyplot as plt
-
-        y_pred = regressor.model_(X)
-        mean = y_pred[:, 0]
-        std = jnp.sqrt(y_pred[:, 1])
-
-        ax = plt.subplot()
-        ax.scatter(X, y, label="Observations", s=2, c="black", alpha=0.1)
-        ax.plot(X[:, 0], mean, label="Network output", c="black")
-        ax.fill_between(
-            X[:, 0],
-            mean - 1.96 * std,
-            mean + 1.96 * std,
-            alpha=0.3,
-        )
-        plt.legend()
-        plt.show()
+            train_step(model, optimizer, X, y)
