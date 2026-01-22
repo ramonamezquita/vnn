@@ -29,7 +29,13 @@ def gaussian_nll_loss(
     var: jax.Array,
     full: bool = False,
 ) -> jax.Array:
-    """Compute the Gaussian negative log likelihood loss."""
+    """Compute the Gaussian negative log likelihood loss.
+    
+    References
+    ----------
+    [1] PyTorch GaussianNLLLoss:
+    https://docs.pytorch.org/docs/stable/generated/torch.nn.GaussianNLLLoss.html
+    """
 
     # Calculate the loss
     loss = 0.5 * (jnp.log(var) + (mean - target) ** 2 / var)
