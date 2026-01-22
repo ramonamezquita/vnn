@@ -2,11 +2,11 @@ from sklearn.ensemble import BaggingRegressor
 
 from vnn.datasets import get_dataset
 from vnn.main import RunParams
-from vnn.mve import MVERegressor
+from vnn.mve import MVE
 
 
 def run(run_params: RunParams) -> None:
-    base_regressor = MVERegressor(
+    base_regressor = MVE(
         n_total_epochs=run_params.n_total_epochs,
         n_hidden_units=run_params.n_hidden_units,
         n_warmup_epochs=run_params.n_warmup_epochs,

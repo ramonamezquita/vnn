@@ -126,7 +126,7 @@ class MLP(nnx.Module):
         return self.sequential(x)
 
 
-class MVE(nnx.Module):
+class MVEModule(nnx.Module):
     """Mean-Variance-Estimation network.
 
     Predicts the mean and variance of a scalar target.
@@ -178,11 +178,11 @@ class MVE(nnx.Module):
         return jnp.concat((self.mean(x), self.sigma2(x)), axis=1)
 
 
-class MVERegressor(BaseEstimator, TransformerMixin):
+class MVE(BaseEstimator, TransformerMixin):
     """Sklearn compatible Mean-Variance-Estimation network.
 
-    Training is performed in two stages: a warm-up phase where only the mean 
-    parameters are updated, followed by joint optimization of both mean and 
+    Training is performed in two stages: a warm-up phase where only the mean
+    parameters are updated, followed by joint optimization of both mean and
     variance parameters.
 
     Scikit-learn compatibility allows the estimator to be used with ensemble
@@ -212,8 +212,9 @@ class MVERegressor(BaseEstimator, TransformerMixin):
     Example
     -------
     >>> from vnn.datasets import get_dataset
+    >>> from vnn.mve import MVE
     >>> X, y = get_dataset("sinusoidal")
-    >>> BaggingRegressor(MVERegressor(), n_estimators=10, random_state=0).fit(X, y)
+    >>> BaggingRegressor(MVE(), n_estimators=10, random_state=0).fit(X, y)
     """
 
     name_to_function = {"sigmoid": nnx.sigmoid, "relu": nnx.relu}
@@ -237,7 +238,7 @@ class MVERegressor(BaseEstimator, TransformerMixin):
 
     def fit(self, X: jax.Array, y: jax.Array) -> Self:
         # Create new MVE network.
-        model = MVE(
+        model = MVEModule(
             n_hidden_units=self.n_hidden_units,
             hidden_activation_fn=self.name_to_function[self.activation_fn],
             rngs=nnx.Rngs(self.random_state),
@@ -283,11 +284,11 @@ class MVERegressor(BaseEstimator, TransformerMixin):
 
     def _fit_loop(
         self,
-        model: MVE,
+        model: MVEModule,
         X: jax.Array,
         y: jax.Array,
         optimizer: nnx.Optimizer,
         n_epochs: int,
-    ) -> MVE:
+    ) -> None:
         for _ in range(n_epochs):
             train_step(model, optimizer, X, y)
