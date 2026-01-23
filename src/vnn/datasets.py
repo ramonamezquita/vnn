@@ -25,10 +25,10 @@ def sinusoidal() -> tuple[jax.Array, jax.Array]:
 
 
 def cubic() -> tuple[jax.Array, jax.Array]:
-    x = jnp.linspace(-3, 3, N_SAMPLES).reshape(-1, 1)
+    x = jnp.linspace(-3, 3, N_SAMPLES)
     y = x**3
     sigma2 = 9
-    noise = np.random.normal(0, np.sqrt(sigma2), N_SAMPLES).reshape(-1, 1)
+    noise = np.random.normal(0, np.sqrt(sigma2), N_SAMPLES)
     y += noise
     return x.reshape(-1, 1), y
 

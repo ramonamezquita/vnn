@@ -1,28 +1,206 @@
+import argparse
+
+import jax.numpy as jnp
 from sklearn.ensemble import BaggingRegressor
 
-from vnn.datasets import get_dataset
-from vnn.main import RunParams
+from vnn.datasets import DATASETS, get_dataset
 from vnn.mve import MVE
 
 
-def run(run_params: RunParams) -> None:
+def run(
+    n_estimators: int = 10,
+    n_total_epochs: int = 10000,
+    n_warmup_epochs: int = 5000,
+    n_hidden_units: int = 20,
+    n_jobs: int = 4,
+    max_samples: float | int | None = 0.8,
+    bootstrap: bool = True,
+    random_state: int = 0,
+    verbose: int = 2,
+    learning_rate: float = 1e-3,
+    activation_fn: str = "sigmoid",
+    dataset: str = "sinusoidal",
+    plot: bool = True,
+) -> None:
     base_regressor = MVE(
-        n_total_epochs=run_params.n_total_epochs,
-        n_hidden_units=run_params.n_hidden_units,
-        n_warmup_epochs=run_params.n_warmup_epochs,
-        learning_rate=run_params.learning_rate,
-        activation_fn=run_params.activation_fn,
+        n_total_epochs=n_total_epochs,
+        n_hidden_units=n_hidden_units,
+        n_warmup_epochs=n_warmup_epochs,
+        learning_rate=learning_rate,
+        activation_fn=activation_fn,
     )
 
-    bagging = BaggingRegressor(
+    regr = BaggingRegressor(
         base_regressor,
-        run_params.n_estimators,
-        max_samples=run_params.max_samples,
-        bootstrap=run_params.bootstrap,
-        n_jobs=run_params.n_jobs,
-        random_state=run_params.seed,
-        verbose=run_params.verbose,
+        n_estimators,
+        max_samples=max_samples,
+        bootstrap=bootstrap,
+        random_state=random_state,
+        verbose=verbose,
+        n_jobs=n_jobs,
     )
 
-    X, y = get_dataset(run_params.dataset)
-    bagging.fit(X, y)
+    X, y = get_dataset(dataset)
+    regr.fit(X, y)
+
+    # `predictions` holds the output for all estimators.
+    predictions = jnp.stack(
+        [regr.estimators_[i].predict(X) for i in range(n_estimators)], axis=0
+    )
+    means = predictions[:, :, 0]
+    vars_ = predictions[:, :, 1]
+
+    # The estimated regression function is just the average of all mean predictions.
+    mean_prediction = means.mean(axis=0)
+
+    # The estimated variance is more tricky.
+    var_prediction = (vars_ + jnp.square(means)).mean(axis=0) - jnp.square(
+        mean_prediction
+    )
+
+    if plot:
+        import matplotlib.pyplot as plt
+
+        lb = mean_prediction - 1.96 * jnp.sqrt(var_prediction)
+        ub = mean_prediction + 1.96 * jnp.sqrt(var_prediction)
+
+        x = X.flatten()
+        ax = plt.subplot()
+        ax.scatter(x, y, label="Observations", s=2, c="black", alpha=0.1)
+        ax.plot(x, mean_prediction, label="Network output")
+        ax.plot(x, lb, ls="--", c="gray", label="95% CI")
+        ax.plot(x, ub, ls="--", c="gray")
+        plt.legend()
+
+        plt.show()
+
+
+def create_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Entrypoint for running training scripts.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    parser.add_argument(
+        "--random_state",
+        type=int,
+        help="Random seed.",
+        default=42,
+    )
+
+    parser.add_argument(
+        "--n_total_epochs",
+        type=int,
+        help="Number of epochs.",
+        default=10000,
+    )
+
+    parser.add_argument(
+        "--n_warmup_epochs",
+        type=int,
+        help="Number of warmup epochs.",
+        default=5000,
+    )
+
+    parser.add_argument(
+        "--n_estimators",
+        type=int,
+        help="Number of models.",
+        default=20,
+    )
+
+    parser.add_argument(
+        "--n_jobs",
+        type=int,
+        help="Number of jobs.",
+        default=4,
+    )
+
+    parser.add_argument(
+        "--n_hidden_units",
+        default=20,
+        type=int,
+        help="Size of the hidden layer.",
+    )
+
+    parser.add_argument(
+        "--activation_fn",
+        type=str,
+        default="sigmoid",
+        help="Hidden activation function.",
+    )
+
+    parser.add_argument(
+        "--bootstrap",
+        action="store_true",
+        help="Whether samples are drawn with replacement.",
+    )
+
+    parser.add_argument(
+        "--max_samples",
+        help="The number of samples to draw from X to train each estimator",
+        type=float,
+        default=1.0,
+    )
+
+    parser.add_argument(
+        "--learning_rate",
+        default=1e-3,
+        type=float,
+        help="Learning rate.",
+    )
+
+    parser.add_argument(
+        "--verbose",
+        type=int,
+        default=2,
+        help="Controls the verbosity when fitting and predicting.",
+    )
+
+    parser.add_argument(
+        "--dataset",
+        default="sinusoidal",
+        type=str,
+        help="Dataset to use.",
+        choices=DATASETS,
+    )
+    parser.add_argument(
+        "--plot",
+        action="store_true",
+        help="Whether to plot results.",
+        default=True
+    )
+
+    return parser
+
+
+def main():
+    """Parses args and runs bagging."""
+
+    parser = create_parser()
+    args = parser.parse_args()
+
+    print(f"Called bagging with parameters: {vars(args)}")
+
+    try:
+        run(
+            n_estimators=args.n_estimators,
+            n_total_epochs=args.n_total_epochs,
+            n_warmup_epochs=args.n_warmup_epochs,
+            n_hidden_units=args.n_hidden_units,
+            n_jobs=args.n_jobs,
+            max_samples=args.max_samples,
+            bootstrap=args.bootstrap,
+            random_state=args.random_state,
+            verbose=args.verbose,
+            learning_rate=args.learning_rate,
+            activation_fn=args.activation_fn,
+            dataset=args.dataset,
+            plot=args.plot,
+        )
+    except Exception as exc:
+        raise exc
+
+
+if __name__ == "__main__":
+    main()
