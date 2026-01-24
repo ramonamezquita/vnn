@@ -1,6 +1,7 @@
 import argparse
 
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
 from sklearn.ensemble import BaggingRegressor
 
 from vnn.datasets import DATASETS, get_dataset
@@ -21,6 +22,7 @@ def run(
     activation_fn: str = "sigmoid",
     dataset: str = "sinusoidal",
     plot: bool = True,
+    ax=None,
 ) -> None:
     base_regressor = MVE(
         n_total_epochs=n_total_epochs,
@@ -58,21 +60,25 @@ def run(
         mean_prediction
     )
 
-    if plot:
-        import matplotlib.pyplot as plt
+    lb = mean_prediction - 1.96 * jnp.sqrt(var_prediction)
+    ub = mean_prediction + 1.96 * jnp.sqrt(var_prediction)
 
-        lb = mean_prediction - 1.96 * jnp.sqrt(var_prediction)
-        ub = mean_prediction + 1.96 * jnp.sqrt(var_prediction)
+    x = X.flatten()
 
-        x = X.flatten()
+    if ax is None:
         ax = plt.subplot()
-        ax.scatter(x, y, label="Observations", s=2, c="black", alpha=0.1)
-        ax.plot(x, mean_prediction, label="Network output")
-        ax.plot(x, lb, ls="--", c="gray", label="95% CI")
-        ax.plot(x, ub, ls="--", c="gray")
-        plt.legend()
 
+    ax.scatter(x, y, label="Observations", s=2, c="black", alpha=0.1)
+    ax.plot(x, mean_prediction, label="Ensmeble output")
+    ax.plot(x, lb, ls="--", c="gray", label="95% CI")
+    ax.plot(x, ub, ls="--", c="gray")
+    ax.set_title(f"Number of estimators = {n_estimators}")
+
+    if plot:
+        plt.legend()
         plt.show()
+
+    return mean_prediction, var_prediction, ax
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -165,10 +171,7 @@ def create_parser() -> argparse.ArgumentParser:
         choices=DATASETS,
     )
     parser.add_argument(
-        "--plot",
-        action="store_true",
-        help="Whether to plot results.",
-        default=True
+        "--plot", action="store_true", help="Whether to plot results.", default=True
     )
 
     return parser
