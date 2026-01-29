@@ -1,9 +1,5 @@
 """
 Synthetic datasets for regression experiments.
-
-This module provides small, toy datasets implemented with JAX arrays,
-primarily for testing and experimentation. Datasets can be retrieved
-by name via the `get_dataset` function.
 """
 
 import jax
