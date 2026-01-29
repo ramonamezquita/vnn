@@ -1,3 +1,17 @@
+"""
+Command-line entrypoint for training and evaluating a Deep Ensemble
+of mean-variance estimation (MVE) neural networks.
+
+The script trains an ensemble using bagging, computes predictive
+mean and uncertainty, and optionally visualizes the results on a
+synthetic regression dataset.
+
+References
+----------
+[1] Balaji L., Alexander P. and Charles B., "Simple and Scalable Predictive Uncertainty 
+Estimation using Deep Ensembles". https://arxiv.org/abs/1612.01474
+"""
+
 import argparse
 
 import jax.numpy as jnp

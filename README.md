@@ -10,28 +10,17 @@ uv sync
 ```
 
 ## Entrypoints
-Entrypoints are located inside the `src` directory and contain python scripts for training the available models. To ensure consistency with the projects dependencies, please run these scripts using `uv`. For example, the following command runs the MVE (Mean-Variance Estimation) training script and plots the results afterwards.
+Entrypoints are located inside the `src` directory and contain python scripts for training the available models. To ensure consistency with the projects dependencies, please run these scripts using `uv`. 
+
+### `ensemble.py`
+
+Train and evaluate a Deep Ensemble of mean–variance estimation (MVE) neural networks.
+
+
 ```
-uv run src/vnn/mve.py --n_total_epochs 20000 --n_warmup_epochs 10000 --plot
+uv run src/vnn/ensemble.py --n_total_epochs 20000 --n_warmup_epochs 10000 --n_estimators 10 --n_jobs 4
 ```
 
-Available scripts:
-- `mve.py`: Minimizes negative likelihood function for both mean and variance simultaneously.
 
-
-
-## Models
-
-### Mean-Variance Estimator
-Estimates the mean and the variance of the probability distribution of the target as a function of the input, given a Gaussian target error-distribution model. The synthetic dataset is the same as in [1].
-
-
-**References**
-
-[1] David A. Nix and Andreas S. Weigend. Estimating the mean and variance of the target probability
-distribution. Proceedings of 1994 IEEE International Conference on Neural Networks (ICNN’94), 1:55–
-60 vol.1, 1994
-
-### More coming soon...
 
 
