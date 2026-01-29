@@ -16,6 +16,8 @@ Entrypoints are located inside the `src` directory and contain python scripts fo
 
 Train and evaluate a Deep Ensemble of mean–variance estimation (MVE) neural networks.
 
+Example:
+
 
 ```
 uv run src/vnn/ensemble.py --n_total_epochs 20000 --n_warmup_epochs 10000 --n_estimators 10 --n_jobs 4
