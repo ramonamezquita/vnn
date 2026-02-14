@@ -4,14 +4,15 @@ of mean-variance estimation (MVE) neural networks.
 
 References
 ----------
-[1] Balaji L., Alexander P. and Charles B., "Simple and Scalable Predictive Uncertainty 
+[1] Balaji L., Alexander P. and Charles B., "Simple and Scalable Predictive Uncertainty
 Estimation using Deep Ensembles". https://arxiv.org/abs/1612.01474
 """
 
 import argparse
 
-import jax.numpy as jnp
 import matplotlib.pyplot as plt
+import numpy as np
+import torch
 from sklearn.ensemble import BaggingRegressor
 
 from vnn.datasets import DATASETS, get_dataset
@@ -53,11 +54,16 @@ def run(
     )
 
     X, y = get_dataset(dataset)
+
     regr.fit(X, y)
 
     # `predictions` holds the output for all estimators.
-    predictions = jnp.stack(
-        [regr.estimators_[i].predict(X) for i in range(n_estimators)], axis=0
+    predictions = (
+        torch.stack(
+            [regr.estimators_[i].predict(X) for i in range(n_estimators)], axis=0
+        )
+        .detach()
+        .numpy()
     )
     means = predictions[:, :, 0]
     vars_ = predictions[:, :, 1]
@@ -66,12 +72,12 @@ def run(
     mean_prediction = means.mean(axis=0)
 
     # The estimated variance is more tricky.
-    var_prediction = (vars_ + jnp.square(means)).mean(axis=0) - jnp.square(
+    var_prediction = (vars_ + np.square(means)).mean(axis=0) - np.square(
         mean_prediction
     )
 
-    lb = mean_prediction - 1.96 * jnp.sqrt(var_prediction)
-    ub = mean_prediction + 1.96 * jnp.sqrt(var_prediction)
+    lb = mean_prediction - 1.96 * np.sqrt(var_prediction)
+    ub = mean_prediction + 1.96 * np.sqrt(var_prediction)
 
     x = X.flatten()
 
