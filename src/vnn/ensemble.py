@@ -15,7 +15,7 @@ import numpy as np
 import torch
 from sklearn.ensemble import BaggingRegressor
 
-from vnn.datasets import DATASETS, get_dataset
+from vnn.datasets import get_dataset
 from vnn.mve import MVE
 
 
@@ -25,6 +25,7 @@ def run(
     n_warmup_epochs: int = 5000,
     n_hidden_units: int = 20,
     n_jobs: int = 4,
+    n_samples: int = 100,
     max_samples: float | int | None = 0.8,
     bootstrap: bool = True,
     random_state: int = 0,
@@ -53,18 +54,19 @@ def run(
         n_jobs=n_jobs,
     )
 
-    X, y = get_dataset(dataset)
-
-    regr.fit(X, y)
+    ds = get_dataset(dataset)
+    X, y = ds.sample(n_samples)
+    X, y = map(torch.from_numpy, (X, y))
+    X_2d = X.reshape(-1, 1)
+    regr.fit(X_2d, y)
 
     # `predictions` holds the output for all estimators.
-    predictions = (
-        torch.stack(
-            [regr.estimators_[i].predict(X) for i in range(n_estimators)], axis=0
-        )
-        .detach()
-        .numpy()
+    predictions: torch.Tensor = torch.stack(
+        [regr.estimators_[i].predict(X) for i in range(n_estimators)], axis=0
     )
+    predictions.detach_()
+    predictions = predictions.numpy()
+
     means = predictions[:, :, 0]
     vars_ = predictions[:, :, 1]
 
@@ -184,7 +186,6 @@ def create_parser() -> argparse.ArgumentParser:
         default="sinusoidal",
         type=str,
         help="Dataset to use.",
-        choices=DATASETS,
     )
     parser.add_argument(
         "--plot", action="store_true", help="Whether to plot results.", default=True

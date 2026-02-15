@@ -1588,6 +1588,7 @@ dependencies = [
     { name = "joblib" },
     { name = "matplotlib" },
     { name = "scikit-learn" },
+    { name = "scipy" },
     { name = "torch" },
     { name = "tqdm" },
 ]
@@ -1599,6 +1600,7 @@ requires-dist = [
     { name = "joblib", specifier = ">=1.5.3" },
     { name = "matplotlib", specifier = ">=3.10.7" },
     { name = "scikit-learn", specifier = ">=1.8.0" },
+    { name = "scipy", specifier = ">=1.16.3" },
     { name = "torch", specifier = ">=2.10.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
 ]
