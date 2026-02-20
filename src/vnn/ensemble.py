@@ -1,47 +1,59 @@
-"""
-Command-line entrypoint for training and evaluating a Deep Ensemble
-of mean-variance estimation (MVE) neural networks.
-
-References
-----------
-[1] Balaji L., Alexander P. and Charles B., "Simple and Scalable Predictive Uncertainty
-Estimation using Deep Ensembles". https://arxiv.org/abs/1612.01474
-"""
-
-import argparse
+import inspect
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from sklearn.base import check_is_fitted
 from sklearn.ensemble import BaggingRegressor
 
-from vnn.datasets import get_dataset
-from vnn.mve import MVE
+from vnn.datasets import get_dataset, plot_dataset
+from vnn.mve import MVE, History
 
 
-def run(
-    n_estimators: int = 10,
-    n_total_epochs: int = 10000,
-    n_warmup_epochs: int = 5000,
-    n_hidden_units: int = 20,
-    n_jobs: int = 4,
-    n_samples: int = 100,
-    max_samples: float | int | None = 0.8,
-    bootstrap: bool = True,
-    random_state: int = 0,
-    verbose: int = 2,
-    learning_rate: float = 1e-3,
-    activation_fn: str = "sigmoid",
-    dataset: str = "sinusoidal",
-    plot: bool = True,
-    ax=None,
+def get_default_args(**kwargs) -> dict[str, Any]:
+    signature = inspect.signature(run_ensemble)
+    default_args = {
+        k: v.default
+        for k, v in signature.parameters.items()
+        if v.default is not inspect.Parameter.empty
+    }
+    default_args.update(kwargs)
+    return default_args
+
+
+def fit_ensemble(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    n_estimators: int,
+    n_total_epochs: int,
+    n_warmup_epochs: int,
+    n_hidden_units: int,
+    n_jobs: int,
+    max_samples: float | int | None,
+    bootstrap: bool,
+    random_state: int,
+    verbose: int,
+    learning_rate: float,
+    l2_penalty: float,
+    l1_penalty: float,
+    cauchy_penalty: float,
+    cauchy_scale: float,
+    activation_fn: str,
+    metrics: tuple[str],
 ) -> None:
+    """Train a Deep Ensemble of mean-variance estimation (MVE) networks."""
     base_regressor = MVE(
         n_total_epochs=n_total_epochs,
         n_hidden_units=n_hidden_units,
         n_warmup_epochs=n_warmup_epochs,
         learning_rate=learning_rate,
         activation_fn=activation_fn,
+        l2_penalty=l2_penalty,
+        l1_penalty=l1_penalty,
+        cauchy_penalty=cauchy_penalty,
+        cauchy_scale=cauchy_scale,
+        metrics=metrics,
     )
 
     regr = BaggingRegressor(
@@ -54,173 +66,123 @@ def run(
         n_jobs=n_jobs,
     )
 
-    ds = get_dataset(dataset)
-    X, y = ds.sample(n_samples)
-    X, y = map(torch.from_numpy, (X, y))
-    X_2d = X.reshape(-1, 1)
-    regr.fit(X_2d, y)
+    regr.fit(X, y)
+    return regr
 
-    # `predictions` holds the output for all estimators.
-    predictions: torch.Tensor = torch.stack(
-        [regr.estimators_[i].predict(X) for i in range(n_estimators)], axis=0
+
+def evaluate_ensemble(
+    ensemble: BaggingRegressor, X: torch.Tensor
+) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+    """Evaluates ensemble."""
+    check_is_fitted(ensemble)
+    n_estimators = ensemble.n_estimators
+    predictions = torch.stack(
+        [ensemble.estimators_[i].predict(X) for i in range(n_estimators)], axis=0
     )
-    predictions.detach_()
-    predictions = predictions.numpy()
-
+    predictions = predictions.detach().numpy()
     means = predictions[:, :, 0]
     vars_ = predictions[:, :, 1]
+    mean = means.mean(axis=0)
+    var = (vars_ + np.square(means)).mean(axis=0) - np.square(mean)
+    lb = mean - 1.96 * np.sqrt(var)
+    ub = mean + 1.96 * np.sqrt(var)
+    return predictions, {"mean": mean, "var": var, "lb": lb, "ub": ub}
 
-    # The estimated regression function is just the average of all mean predictions.
-    mean_prediction = means.mean(axis=0)
 
-    # The estimated variance is more tricky.
-    var_prediction = (vars_ + np.square(means)).mean(axis=0) - np.square(
-        mean_prediction
+def aggregate_ensemble_metrics(
+    ensemble: BaggingRegressor,
+) -> list[dict[str, float]]:
+    check_is_fitted(ensemble)
+    histories: list[History] = [est.history_ for est in ensemble.estimators_]
+    metric_names = histories[0].metrics
+    n_epochs = len(histories[0])
+
+    aggregated: list[dict[str, float]] = []
+
+    for epoch in range(n_epochs):
+        epoch_dict: dict[str, float] = {}
+
+        for metric in metric_names:
+            values = [h[epoch][metric] for h in histories]
+            epoch_dict[metric] = float(np.mean(values))
+
+        aggregated.append(epoch_dict)
+
+    return aggregated
+
+
+def run_ensemble(
+    n_estimators: int = 10,
+    n_total_epochs: int = 10000,
+    n_warmup_epochs: int = 5000,
+    n_hidden_units: int = 100,
+    n_jobs: int = 4,
+    n_samples: int = 100,
+    max_samples: float | int | None = 1.0,
+    bootstrap: bool = False,
+    random_state: int = 42,
+    verbose: int = 2,
+    learning_rate: float = 1e-3,
+    l2_penalty: float = 0.0,
+    l1_penalty: float = 0.0,
+    cauchy_penalty: float = 0.0,
+    cauchy_scale: float = 0.1,
+    activation_fn: str = "sigmoid",
+    dataset: str = "piecewise",
+    plot: bool = False,
+    metrics: tuple[str] = (),
+):
+    """Train and evaluate ensemble.
+
+    References
+    ----------
+    [1] Balaji L., Alexander P. and Charles B., "Simple and Scalable Predictive Uncertainty
+    Estimation using Deep Ensembles". https://arxiv.org/abs/1612.01474
+    """
+
+    ds = get_dataset(dataset)
+    x_obs, y_obs = ds.sample(n_samples)
+    x_obs, y_obs = map(torch.from_numpy, (x_obs, y_obs))
+    x_obs_2d = x_obs.reshape(-1, 1)
+
+    ensemble = fit_ensemble(
+        x_obs_2d,
+        y_obs,
+        n_estimators=n_estimators,
+        n_total_epochs=n_total_epochs,
+        n_warmup_epochs=n_warmup_epochs,
+        n_hidden_units=n_hidden_units,
+        n_jobs=n_jobs,
+        max_samples=max_samples,
+        bootstrap=bootstrap,
+        random_state=random_state,
+        verbose=verbose,
+        learning_rate=learning_rate,
+        l2_penalty=l2_penalty,
+        l1_penalty=l1_penalty,
+        cauchy_penalty=cauchy_penalty,
+        cauchy_scale=cauchy_scale,
+        activation_fn=activation_fn,
+        metrics=metrics,
     )
 
-    lb = mean_prediction - 1.96 * np.sqrt(var_prediction)
-    ub = mean_prediction + 1.96 * np.sqrt(var_prediction)
+    predictions, statistics = evaluate_ensemble(ensemble, x_obs_2d)
 
-    x = X.flatten()
-
-    if ax is None:
-        ax = plt.subplot()
-
-    ax.scatter(x, y, label="Observations", s=2, c="black", alpha=0.1)
-    ax.plot(x, mean_prediction, label="Ensmeble output")
-    ax.plot(x, lb, ls="--", c="gray", label="95% CI")
-    ax.plot(x, ub, ls="--", c="gray")
-    ax.set_title(f"Number of estimators = {n_estimators}")
-
+    fig, ax = plt.subplots()
+    ax = plot_dataset(
+        x_full=ds.x,
+        u_true=ds.u_true,
+        u_forward=ds.u_forward,
+        x_obs=x_obs,
+        y_obs=y_obs,
+        y_pred=statistics["mean"],
+        lb=statistics["lb"],
+        ub=statistics["ub"],
+        ax=ax,
+    )
+    plt.tight_layout()
+    plt.legend()
     if plot:
-        plt.legend()
         plt.show()
 
-    return mean_prediction, var_prediction, ax
-
-
-def create_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Entrypoint for running training scripts.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-
-    parser.add_argument(
-        "--random_state",
-        type=int,
-        help="Random seed.",
-        default=42,
-    )
-
-    parser.add_argument(
-        "--n_total_epochs",
-        type=int,
-        help="Number of epochs.",
-        default=10000,
-    )
-
-    parser.add_argument(
-        "--n_warmup_epochs",
-        type=int,
-        help="Number of warmup epochs.",
-        default=5000,
-    )
-
-    parser.add_argument(
-        "--n_estimators",
-        type=int,
-        help="Number of models.",
-        default=20,
-    )
-
-    parser.add_argument(
-        "--n_jobs",
-        type=int,
-        help="Number of jobs.",
-        default=4,
-    )
-
-    parser.add_argument(
-        "--n_hidden_units",
-        default=20,
-        type=int,
-        help="Size of the hidden layer.",
-    )
-
-    parser.add_argument(
-        "--activation_fn",
-        type=str,
-        default="sigmoid",
-        help="Hidden activation function.",
-    )
-
-    parser.add_argument(
-        "--bootstrap",
-        action="store_true",
-        help="Whether samples are drawn with replacement.",
-    )
-
-    parser.add_argument(
-        "--max_samples",
-        help="The number of samples to draw from X to train each estimator",
-        type=float,
-        default=1.0,
-    )
-
-    parser.add_argument(
-        "--learning_rate",
-        default=1e-3,
-        type=float,
-        help="Learning rate.",
-    )
-
-    parser.add_argument(
-        "--verbose",
-        type=int,
-        default=2,
-        help="Controls the verbosity when fitting and predicting.",
-    )
-
-    parser.add_argument(
-        "--dataset",
-        default="sinusoidal",
-        type=str,
-        help="Dataset to use.",
-    )
-    parser.add_argument(
-        "--plot", action="store_true", help="Whether to plot results.", default=True
-    )
-
-    return parser
-
-
-def main():
-    """Parses args and runs bagging."""
-
-    parser = create_parser()
-    args = parser.parse_args()
-
-    print(f"Called bagging with parameters: {vars(args)}")
-
-    try:
-        run(
-            n_estimators=args.n_estimators,
-            n_total_epochs=args.n_total_epochs,
-            n_warmup_epochs=args.n_warmup_epochs,
-            n_hidden_units=args.n_hidden_units,
-            n_jobs=args.n_jobs,
-            max_samples=args.max_samples,
-            bootstrap=args.bootstrap,
-            random_state=args.random_state,
-            verbose=args.verbose,
-            learning_rate=args.learning_rate,
-            activation_fn=args.activation_fn,
-            dataset=args.dataset,
-            plot=args.plot,
-        )
-    except Exception as exc:
-        raise exc
-
-
-if __name__ == "__main__":
-    main()
+    return ensemble, predictions, statistics, fig

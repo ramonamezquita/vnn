@@ -1,4 +1,4 @@
-# Python-generated files
+# python-generated files
 __pycache__/
 *.py[oc]
 build/
@@ -6,8 +6,13 @@ dist/
 wheels/
 *.egg-info
 
-# Virtual environments
+# virtual environments
 .venv
 
-# MacOS
+# macos
 .DS_Store
+
+# mlflow
+mlartifacts/
+mlflow.db
+mlruns/
