@@ -2,10 +2,10 @@ import argparse
 
 from vnn.ensemble import aggregate_ensemble_metrics, get_default_args, run_ensemble
 
-default_args = get_default_args()
-
 
 def create_parser() -> argparse.ArgumentParser:
+    default_args = get_default_args()
+
     parser = argparse.ArgumentParser(
         description="Train a Deep Ensemble of mean-variance estimation (MVE) networks.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -103,6 +103,12 @@ def create_parser() -> argparse.ArgumentParser:
         help="Cauchy scale parameter.",
     )
     parser.add_argument(
+        "--calc_input_gradient_at",
+        default=default_args["calc_input_gradient_at"],
+        nargs="*",
+        type=float,
+    )
+    parser.add_argument(
         "--verbose",
         type=int,
         default=default_args["verbose"],
@@ -140,6 +146,7 @@ def main():
     parser = create_parser()
     args = parser.parse_args()
     print(f"Called bagging with parameters: {vars(args)}")
+
     ensemble, predictions, statistics, fig = run_ensemble(
         n_estimators=args.n_estimators,
         n_total_epochs=args.n_total_epochs,
@@ -160,6 +167,7 @@ def main():
         dataset=args.dataset,
         plot=args.plot,
         metrics=("rmse",),
+        calc_input_gradient_at=args.calc_input_gradient_at,
     )
 
     ensemble_metrics = aggregate_ensemble_metrics(ensemble)

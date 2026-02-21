@@ -13,24 +13,28 @@ Conference on Neural Networks (ICNN'94), Orlando, FL, USA, 1994, pp. 55-60
 vol.1, doi: 10.1109/ICNN.1994.374138.
 """
 
-from typing import Callable, Iterator, Literal, Self
+from typing import Callable, Iterator, Literal, Protocol, Self
 
 import torch
-from sklearn import metrics
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils.validation import check_is_fitted
 from torch import nn, optim
 
 from vnn.datasets import TORCH_DTYPE
-from vnn.regularizers import ModelRegularizer, Regularizer
+from vnn.metrics import get_metric
+from vnn.regularizers import ModelRegularizer
 
 ActivationFunction = Callable[[torch.Tensor], torch.Tensor]
 CRITERION = nn.GaussianNLLLoss()
 
 
-def get_metric(metric_name: str):
-    name_to_fn = {"rmse": metrics.root_mean_squared_error}
-    return name_to_fn[metric_name]
+class Metric(Protocol):
+    def __call__(self, y_true: torch.Tensor, y_pred: torch.Tensor) -> float:
+        return ...
+
+
+class Regularizer(Protocol):
+    def __call__(self, model: nn.Module) -> torch.Tensor: ...
 
 
 class History:
@@ -181,6 +185,7 @@ class MVE(BaseEstimator, TransformerMixin):
         cauchy_penalty: float = 0.0,
         cauchy_scale: float = 0.1,
         metrics: tuple[str] = (),
+        calc_input_gradient_at: tuple[float] = (),
     ):
         self.n_hidden_units = n_hidden_units
         self.n_total_epochs = n_total_epochs
@@ -192,9 +197,15 @@ class MVE(BaseEstimator, TransformerMixin):
         self.cauchy_penalty = cauchy_penalty
         self.cauchy_scale = cauchy_scale
         self.metrics = metrics
+        self.calc_input_gradient_at = calc_input_gradient_at
+
+    def get_metric_names(self) -> tuple[str]:
+        metric_names = self.metrics + self.default_metrics
+        gradient_names = tuple(f"grad_at_{x}" for x in self.calc_input_gradient_at)
+        return metric_names + gradient_names
 
     def fit(self, X: torch.Tensor, y: torch.Tensor) -> Self:
-        self.history_ = History(self.metrics + self.default_metrics)
+        self.history_ = History(self.get_metric_names())
 
         X = torch.as_tensor(X, dtype=TORCH_DTYPE)
         y = torch.as_tensor(y, dtype=TORCH_DTYPE)
@@ -249,16 +260,20 @@ class MVE(BaseEstimator, TransformerMixin):
     def calc_metrics(
         self, y_true: torch.Tensor, y_pred: torch.Tensor
     ) -> dict[str, float]:
-        y_true = y_true.detach().numpy().flatten()
-        y_pred = y_pred[:, 0].detach().numpy().flatten()
         metrics = {}
         for metric_name in self.metrics:
-            metrics[metric_name] = get_metric(metric_name)(y_true, y_pred)
-
+            metrics[metric_name] = get_metric(metric_name)(y_true, y_pred[:, 0])
         return metrics
 
+    def calc_input_gradients(self, model: MVEModule) -> dict[str, float]:
+        grads = {}
+        for x in self.calc_input_gradient_at:
+            X = torch.tensor([[x]], dtype=TORCH_DTYPE, requires_grad=True)
+            model.mean(X).backward()
+            grads[f"grad_at_{x}"] = X.grad.item()
+        return grads
+
     def calc_weight_norms(self, model: MVEModule) -> dict[str, float]:
-        """Tracks weight norms per subnetwork."""
         result = {}
         for name in ("mean", "sigma2"):
             subnetwork = getattr(model, name)
@@ -282,7 +297,9 @@ class MVE(BaseEstimator, TransformerMixin):
             with torch.no_grad():
                 y_pred = model(X)
 
-            metrics = self.calc_metrics(y_true=y, y_pred=y_pred)
-            metrics["loss"] = loss
-            metrics.update(self.calc_weight_norms(model))
-            self.history_.save(**metrics)
+            epoch_metrics = {}
+            epoch_metrics.update(self.calc_metrics(y_true=y, y_pred=y_pred))
+            epoch_metrics.update(self.calc_weight_norms(model))
+            epoch_metrics.update(self.calc_input_gradients(model))
+            epoch_metrics["loss"] = loss
+            self.history_.save(**epoch_metrics)

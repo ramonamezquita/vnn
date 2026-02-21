@@ -1,11 +1,5 @@
-from typing import Protocol
-
 import torch
 from torch import nn
-
-
-class Regularizer(Protocol):
-    def __call__(self, model: nn.Module) -> torch.Tensor: ...
 
 
 class L1Regularizer:
@@ -31,7 +25,7 @@ class L2Regularizer:
 
 
 class CauchyRegularizer:
-    def __init__(self, lambda_: float = 1e-3, gamma: float = 1e-3):
+    def __init__(self, lambda_: float = 1e-3, gamma: float = 1):
         self.lambda_ = lambda_
         self.gamma = gamma
 
@@ -44,7 +38,7 @@ class CauchyRegularizer:
 
 class ModelRegularizer:
     def __init__(self):
-        self._regularizers: list[Regularizer] = list()
+        self._regularizers = list()
 
     def add_l1_regularizer(self, lambda_: float = 1e-3) -> None:
         self._regularizers.append(L1Regularizer(lambda_))

@@ -185,7 +185,7 @@ def gen_piecewise() -> Dataset:
         )
 
     return Dataset(
-        x, U, F=make_gaussian_filter(scale=3.0), eps=make_gaussian_noise(0.05)
+        x, U, F=make_gaussian_filter(scale=2.0), eps=make_gaussian_noise(0.05)
     )
 
 

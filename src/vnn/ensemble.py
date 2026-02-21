@@ -41,6 +41,7 @@ def fit_ensemble(
     cauchy_scale: float,
     activation_fn: str,
     metrics: tuple[str],
+    calc_input_gradient_at: tuple[float],
 ) -> None:
     """Train a Deep Ensemble of mean-variance estimation (MVE) networks."""
     base_regressor = MVE(
@@ -54,6 +55,7 @@ def fit_ensemble(
         cauchy_penalty=cauchy_penalty,
         cauchy_scale=cauchy_scale,
         metrics=metrics,
+        calc_input_gradient_at=calc_input_gradient_at,
     )
 
     regr = BaggingRegressor(
@@ -131,6 +133,7 @@ def run_ensemble(
     dataset: str = "piecewise",
     plot: bool = False,
     metrics: tuple[str] = (),
+    calc_input_gradient_at: tuple[float] = (),
 ):
     """Train and evaluate ensemble.
 
@@ -164,6 +167,7 @@ def run_ensemble(
         cauchy_scale=cauchy_scale,
         activation_fn=activation_fn,
         metrics=metrics,
+        calc_input_gradient_at=calc_input_gradient_at,
     )
 
     predictions, statistics = evaluate_ensemble(ensemble, x_obs_2d)
