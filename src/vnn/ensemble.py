@@ -146,19 +146,13 @@ def fit_ensemble(
     return ensemble
 
 
-def predict_ensemble(
-    ensemble: BaggingRegressor, X: torch.Tensor
-) -> tuple[np.ndarray, np.ndarray]:
+def predict_ensemble(ensemble: BaggingRegressor, X: torch.Tensor) -> np.ndarray:
     n_estimators = ensemble.n_estimators
     predictions = torch.stack(
         [ensemble.estimators_[i].predict(X) for i in range(n_estimators)], axis=0
     )
     predictions = predictions.detach().numpy()
-    means = predictions[:, :, 0]
-    vars_ = predictions[:, :, 1]
-    mean = means.mean(axis=0)
-    var = (vars_ + np.square(means)).mean(axis=0) - np.square(mean)
-    return mean, var
+    return predictions
 
 
 def plot_ensemble(
@@ -167,8 +161,10 @@ def plot_ensemble(
     y_pred: np.ndarray,
     ax: plt.Axes | None = None,
 ) -> plt.Axes:
-    mean = y_pred[:, :, 0]
-    var = y_pred[:, :, 1]
+    means = y_pred[:, :, 0]
+    mean = means.mean(axis=0)
+    vars_ = y_pred[:, :, 1]
+    var = (vars_ + np.square(means)).mean(axis=0) - np.square(mean)
     lb = mean - 1.96 * np.sqrt(var)
     ub = mean + 1.96 * np.sqrt(var)
 
@@ -176,7 +172,7 @@ def plot_ensemble(
         ax = plt.subplot()
 
     ax.scatter(x_obs, y_obs, marker="x", color="black", s=3, label="Observations")
-    ax.plot(x_obs, y_pred, color="purple", label="Network output")
+    ax.plot(x_obs, mean, color="purple", label="Network output")
     ax.fill_between(x_obs, lb, ub, color="purple", alpha=0.2, label="1.96 Std. dev.")
     return ax
 
