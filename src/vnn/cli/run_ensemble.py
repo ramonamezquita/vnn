@@ -5,9 +5,9 @@ import torch
 
 from vnn.datasets import get_dataset
 from vnn.ensemble import (
-    aggregate_ensemble_metrics,
     fit_ensemble,
     get_default_args,
+    get_ensemble_metrics,
     plot_ensemble,
     predict_ensemble,
 )
@@ -182,8 +182,8 @@ def main():
         metrics=("rmse",),
         calc_input_gradient_at=args.calc_input_gradient_at,
     )
-    metrics = aggregate_ensemble_metrics(ensemble)
     y_pred = predict_ensemble(ensemble, x_obs_2d)
+    metrics = get_ensemble_metrics(ensemble)
 
     fig, ax = plt.subplots()
     plot_ensemble(x_obs, y_obs, y_pred, ax=ax)

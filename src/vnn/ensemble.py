@@ -21,7 +21,7 @@ def get_default_args(**kwargs) -> dict[str, Any]:
     return default_args
 
 
-def collect_ensemble_weights(ensemble: BaggingRegressor) -> dict[str, np.ndarray]:
+def get_ensemble_weights(ensemble: BaggingRegressor) -> dict[str, np.ndarray]:
     weights: dict[str, list[np.ndarray]] = {}
     for estimator in ensemble.estimators_:
         model: MVEModule = estimator.model_
@@ -37,7 +37,7 @@ def collect_ensemble_weights(ensemble: BaggingRegressor) -> dict[str, np.ndarray
     return weights
 
 
-def aggregate_ensemble_metrics(
+def get_ensemble_metrics(
     ensemble: BaggingRegressor,
 ) -> list[dict[str, float]]:
     check_is_fitted(ensemble)
@@ -147,6 +147,23 @@ def fit_ensemble(
 
 
 def predict_ensemble(ensemble: BaggingRegressor, X: torch.Tensor) -> np.ndarray:
+    """Generate predictions from each estimator in a fitted ensemble.
+
+    Parameters
+    ----------
+    ensemble : BaggingRegressor
+        A fitted sklearn.ensemble.BaggingRegressor instance.
+
+    X : torch.Tensor
+        Input tensor.
+
+    Returns
+    -------
+    A NumPy array of shape (n_estimators, n_samples, n_features_out) containing
+    predictions from each base estimator.
+    """
+    check_is_fitted(ensemble)
+
     n_estimators = ensemble.n_estimators
     predictions = torch.stack(
         [ensemble.estimators_[i].predict(X) for i in range(n_estimators)], axis=0
@@ -195,7 +212,7 @@ def plot_weight_distributions(
     fig : plt.Figure
     """
     check_is_fitted(ensemble)
-    weights = collect_ensemble_weights(ensemble)
+    weights = get_ensemble_weights(ensemble)
 
     n_plots = len(weights)
     fig, axes = plt.subplots(1, n_plots, figsize=(4 * n_plots, 4), sharey=False)

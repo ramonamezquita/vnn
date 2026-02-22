@@ -111,7 +111,7 @@ class MLP(nn.Module):
     ):
         super().__init__()
 
-        layer_sizes = (n_features_in,) + hidden_layer_sizes
+        layer_sizes = (n_features_in,) + tuple(hidden_layer_sizes)
         layers = []
         for in_size, out_size in zip(layer_sizes[:-1], layer_sizes[1:]):
             layers += [nn.Linear(in_size, out_size), hidden_activation_fn]
@@ -250,7 +250,7 @@ class MVE(BaseEstimator, TransformerMixin):
             hidden_layer_sizes=self.hidden_layer_sizes,
             hidden_activation_fn=self.name_to_function[self.activation_fn],
         )
-        optimizer = optim.Adam(model.parameters())
+        optimizer = optim.Adam(model.parameters(), lr=self.learning_rate)
         regularizer = self.get_regularizer()
 
         # Stage 1: Train keeping variance parameters fixed (warm-up stage).
