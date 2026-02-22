@@ -1,6 +1,16 @@
 import argparse
 
-from vnn.ensemble import aggregate_ensemble_metrics, get_default_args, run_ensemble
+import matplotlib.pyplot as plt
+import torch
+
+from vnn.datasets import get_dataset
+from vnn.ensemble import (
+    aggregate_ensemble_metrics,
+    fit_ensemble,
+    get_default_args,
+    plot_ensemble,
+    predict_ensemble,
+)
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -45,18 +55,17 @@ def create_parser() -> argparse.ArgumentParser:
         help="Number of jobs.",
         default=default_args["n_jobs"],
     )
-
-    parser.add_argument(
-        "--n_hidden_units",
-        default=default_args["n_hidden_units"],
-        type=int,
-        help="Size of the hidden layer.",
-    )
     parser.add_argument(
         "--n_samples",
-        default=default_args["n_samples"],
+        default=100,
         type=int,
         help="Number of samples/observations to train with.",
+    )
+    parser.add_argument(
+        "--hidden_layer_sizes",
+        default=default_args["hidden_layer_sizes"],
+        nargs="*",
+        type=int,
     )
     parser.add_argument(
         "--activation_fn",
@@ -117,7 +126,7 @@ def create_parser() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--dataset",
-        default=default_args["dataset"],
+        default="piecewise",
         type=str,
         help="Dataset to use.",
     )
@@ -145,15 +154,21 @@ def create_parser() -> argparse.ArgumentParser:
 def main():
     parser = create_parser()
     args = parser.parse_args()
-    print(f"Called bagging with parameters: {vars(args)}")
+    print(f"Called `run_ensemble` with parameters: {vars(args)}")
 
-    ensemble, predictions, statistics, fig = run_ensemble(
+    dataset = get_dataset(args.dataset)
+    x_obs, y_obs = dataset.sample(args.n_samples)
+    x_obs, y_obs = map(torch.from_numpy, (x_obs, y_obs))
+    x_obs_2d = x_obs.reshape(-1, 1)
+
+    ensemble = fit_ensemble(
+        X=x_obs_2d,
+        y=y_obs,
         n_estimators=args.n_estimators,
         n_total_epochs=args.n_total_epochs,
         n_warmup_epochs=args.n_warmup_epochs,
-        n_hidden_units=args.n_hidden_units,
         n_jobs=args.n_jobs,
-        n_samples=args.n_samples,
+        hidden_layer_sizes=args.hidden_layer_sizes,
         max_samples=args.max_samples,
         bootstrap=args.bootstrap,
         random_state=args.random_state,
@@ -164,24 +179,33 @@ def main():
         cauchy_penalty=args.cauchy_penalty,
         cauchy_scale=args.cauchy_scale,
         activation_fn=args.activation_fn,
-        dataset=args.dataset,
-        plot=args.plot,
         metrics=("rmse",),
         calc_input_gradient_at=args.calc_input_gradient_at,
     )
+    metrics = aggregate_ensemble_metrics(ensemble)
+    y_pred = predict_ensemble(ensemble, x_obs_2d)
 
-    ensemble_metrics = aggregate_ensemble_metrics(ensemble)
+    fig, ax = plt.subplots()
+    plot_ensemble(x_obs, y_obs, y_pred, ax=ax)
+    dataset.plot(ax)
+    ax.set_xlabel("x", fontsize=12)
+    ax.set_ylabel("y", fontsize=12)
+    ax.grid(True, linestyle="--", alpha=0.3)
+    ax.legend(frameon=True)
+    ax.set_axisbelow(True)
+    plt.tight_layout()
+    plt.legend()
 
     if args.use_mlflow:
         import mlflow
 
-        mlflow.set_experiment("deep-ensemble")
+        mlflow.set_experiment("run_ensemble")
         mlflow.set_tracking_uri("http://127.0.0.1:5000")
         with mlflow.start_run():
             mlflow.log_params(vars(args))
             mlflow.log_figure(fig, "figures/datasets.png")
-            for step, metrics in enumerate(ensemble_metrics):
-                mlflow.log_metrics(metrics, step)
+            for step, epoch_metrics in enumerate(metrics):
+                mlflow.log_metrics(epoch_metrics, step)
 
 
 if __name__ == "__main__":

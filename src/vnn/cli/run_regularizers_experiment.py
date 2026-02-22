@@ -54,19 +54,19 @@ def main():
     parser = create_parser()
     parsed_args = parser.parse_args()
 
-    run_args = get_default_args(
-        plot=False,
-        metrics=("rmse",),
-        activation_fn=parsed_args.activation_fn,
-        calc_input_gradient_at=parsed_args.calc_input_gradient_at,
-    )
-
     mlflow.set_tracking_uri("http://127.0.0.1:5000")
     experiment = mlflow.set_experiment("mve-regularization")
 
     for config in configs:
         with mlflow.start_run(experiment_id=experiment.experiment_id):
-            run_args.update(config)
+            run_args = get_default_args(
+                plot=False,
+                metrics=("rmse",),
+                activation_fn=parsed_args.activation_fn,
+                calc_input_gradient_at=parsed_args.calc_input_gradient_at,
+                **config,
+            )
+            print(f"Called `run_ensemble` with parameters: {run_args}")
             ensemble, predictions, statistics, fig = run_ensemble(**run_args)
             ensemble_metrics = aggregate_ensemble_metrics(ensemble)
             mlflow.log_params(run_args)

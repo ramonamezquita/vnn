@@ -141,6 +141,22 @@ class Dataset:
         y_obs = self.u_forward[indices] + self.eps(x_obs, self.rng)
         return x_obs, y_obs
 
+    def plot(self, ax: plt.Axes | None = None) -> plt.Axes:
+        if ax is None:
+            ax = plt.subplot()
+
+        ax.plot(
+            self.x, self.u_true, linestyle="dotted", label="Truth u", color="maroon"
+        )
+        ax.plot(
+            self.x,
+            self.u_forward,
+            linestyle="solid",
+            color="cornflowerblue",
+            label="Blurred model",
+        )
+        return ax
+
 
 def gen_sinusoidal() -> Dataset:
     x = np.linspace(0, np.pi / 2, 128, dtype=NUMPY_DTYPE)

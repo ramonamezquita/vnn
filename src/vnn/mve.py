@@ -81,46 +81,82 @@ def train_step(
 
 
 class MLP(nn.Module):
-    """One-hidden-layer feedforward network."""
+    """Feedforward network.
+
+    Parameters
+    ----------
+    n_features_in : int
+        Number of input features.
+
+    hidden_layer_sizes : tuple of int
+        Number of units in each hidden layer.
+
+    n_features_out : int
+        Number of output features.
+
+    hidden_activation_fn : ActivationFunction, default=nn.Sigmoid()
+        Activation function applied after each hidden layer.
+
+    output_activation_fn : ActivationFunction, default=nn.Identity()
+        Activation function applied after the output layer.
+    """
 
     def __init__(
         self,
         n_features_in: int,
-        n_hidden_units: int,
+        hidden_layer_sizes: tuple[int, ...],
         n_features_out: int,
         hidden_activation_fn: ActivationFunction = nn.Sigmoid(),
         output_activation_fn: ActivationFunction = nn.Identity(),
     ):
         super().__init__()
-        self.sequential = nn.Sequential(
-            nn.Linear(n_features_in, n_hidden_units),
-            hidden_activation_fn,
-            nn.Linear(n_hidden_units, n_features_out),
-            output_activation_fn,
-        )
+
+        layer_sizes = (n_features_in,) + hidden_layer_sizes
+        layers = []
+        for in_size, out_size in zip(layer_sizes[:-1], layer_sizes[1:]):
+            layers += [nn.Linear(in_size, out_size), hidden_activation_fn]
+        layers += [nn.Linear(layer_sizes[-1], n_features_out), output_activation_fn]
+
+        self.sequential = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.sequential(x)
 
 
 class MVEModule(nn.Module):
-    """Mean-Variance-Estimation network."""
+    """Mean-Variance-Estimation network.
+
+    Parameters
+    ----------
+    hidden_layer_sizes : tuple of int
+        Number of units in each hidden layer.
+
+    hidden_activation_fn : ActivationFunction, default=nn.Sigmoid()
+        Activation function applied after each hidden layer.
+
+    References
+    ----------
+    [1] Nix, D. A. and Weigend, A. S., "Estimating the mean and variance of the
+    target probability distribution", Proceedings of 1994 IEEE International
+    Conference on Neural Networks (ICNN'94), Orlando, FL, USA, 1994, pp. 55-60
+    vol.1, doi: 10.1109/ICNN.1994.374138.
+    """
 
     def __init__(
         self,
-        n_hidden_units: int = 10,
+        hidden_layer_sizes: tuple[int] = (100,),
         hidden_activation_fn: ActivationFunction = nn.Sigmoid(),
     ):
         super().__init__()
         self.mean = MLP(
             n_features_in=1,
-            n_hidden_units=n_hidden_units,
+            hidden_layer_sizes=hidden_layer_sizes,
             n_features_out=1,
             hidden_activation_fn=hidden_activation_fn,
         )
         self.sigma2 = MLP(
             n_features_in=1,
-            n_hidden_units=n_hidden_units,
+            hidden_layer_sizes=hidden_layer_sizes,
             n_features_out=1,
             hidden_activation_fn=hidden_activation_fn,
             output_activation_fn=nn.Softplus(),
@@ -142,8 +178,8 @@ class MVE(BaseEstimator, TransformerMixin):
 
     Parameters
     ----------
-    n_hidden_units : int, default=20
-        Number of hidden units.
+    hidden_layer_sizes : tuple of int, default=(100,)
+        Number of units in each hidden layer.
 
     n_total_epochs: int = 10000
         Number of total epochs.
@@ -171,11 +207,11 @@ class MVE(BaseEstimator, TransformerMixin):
         "sigma2_weight_l1_norm",
         "sigma2_weight_l2_norm",
     )
-    name_to_function = {"sigmoid": nn.Sigmoid(), "relu": nn.ReLU()}
+    name_to_function = {"sigmoid": nn.Sigmoid(), "relu": nn.ReLU(), "tanh": nn.Tanh()}
 
     def __init__(
         self,
-        n_hidden_units: int = 10,
+        hidden_layer_sizes: tuple[int] = (100,),
         n_total_epochs: int = 5000,
         n_warmup_epochs: int = 5000,
         learning_rate: float = 1e-3,
@@ -187,7 +223,7 @@ class MVE(BaseEstimator, TransformerMixin):
         metrics: tuple[str] = (),
         calc_input_gradient_at: tuple[float] = (),
     ):
-        self.n_hidden_units = n_hidden_units
+        self.hidden_layer_sizes = hidden_layer_sizes
         self.n_total_epochs = n_total_epochs
         self.n_warmup_epochs = n_warmup_epochs
         self.learning_rate = learning_rate
@@ -210,12 +246,10 @@ class MVE(BaseEstimator, TransformerMixin):
         X = torch.as_tensor(X, dtype=TORCH_DTYPE)
         y = torch.as_tensor(y, dtype=TORCH_DTYPE)
 
-        # Create new MVE network.
         model = MVEModule(
-            n_hidden_units=self.n_hidden_units,
+            hidden_layer_sizes=self.hidden_layer_sizes,
             hidden_activation_fn=self.name_to_function[self.activation_fn],
         )
-
         optimizer = optim.Adam(model.parameters())
         regularizer = self.get_regularizer()
 
