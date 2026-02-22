@@ -16,3 +16,4 @@ wheels/
 mlartifacts/
 mlflow.db
 mlruns/
+mlflow.db-journal

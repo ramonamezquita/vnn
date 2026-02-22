@@ -18,14 +18,13 @@ NUMPY_DTYPE = np.float32
 TORCH_DTYPE = torch.float32
 
 
-def plot_dataset(x_full, x_obs, u_true, u_forward, y_obs, y_pred, lb, ub, ax=None):
+def plot_dataset(
+    x_full, x_obs, u_true, u_forward, y_obs, y_pred, lb, ub, ax=None
+) -> plt.Axes:
     if ax is None:
         ax = plt.subplot()
 
-    # Ground truth.
     ax.plot(x_full, u_true, linestyle="dotted", label="Truth u", color="maroon")
-
-    # Forward model.
     ax.plot(
         x_full,
         u_forward,
@@ -33,22 +32,9 @@ def plot_dataset(x_full, x_obs, u_true, u_forward, y_obs, y_pred, lb, ub, ax=Non
         color="cornflowerblue",
         label="Blurred model",
     )
-
-    # Observations.
     ax.scatter(x_obs, y_obs, marker="x", color="black", s=3)
-
-    # Predictions.
     ax.plot(x_obs, y_pred, color="purple", label="Network output")
-
-    # Uncertainty.
-    ax.fill_between(
-        x_obs,
-        lb,
-        ub,
-        color="purple",
-        alpha=0.2,
-        label="1.96 Std. dev.",
-    )
+    ax.fill_between(x_obs, lb, ub, color="purple", alpha=0.2, label="1.96 Std. dev.")
 
     ax.set_xlabel("x", fontsize=12)
     ax.set_ylabel("y", fontsize=12)
@@ -201,7 +187,10 @@ def gen_piecewise() -> Dataset:
         )
 
     return Dataset(
-        x, U, F=make_gaussian_filter(scale=2.0), eps=make_gaussian_noise(0.05)
+        x,
+        U,
+        F=make_gaussian_filter(scale=2.0),
+        eps=make_gaussian_noise(0.05),
     )
 
 

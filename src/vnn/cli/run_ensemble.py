@@ -5,16 +5,16 @@ import torch
 
 from vnn.datasets import get_dataset
 from vnn.ensemble import (
-    fit_ensemble,
-    get_default_args,
-    get_ensemble_metrics,
-    plot_ensemble,
-    predict_ensemble,
+    fit,
+    get_fit_default_args,
+    get_metrics,
+    plot,
+    predict,
 )
 
 
 def create_parser() -> argparse.ArgumentParser:
-    default_args = get_default_args()
+    default_args = get_fit_default_args()
 
     parser = argparse.ArgumentParser(
         description="Train a Deep Ensemble of mean-variance estimation (MVE) networks.",
@@ -161,7 +161,7 @@ def main():
     x_obs, y_obs = map(torch.from_numpy, (x_obs, y_obs))
     x_obs_2d = x_obs.reshape(-1, 1)
 
-    ensemble = fit_ensemble(
+    ensemble = fit(
         X=x_obs_2d,
         y=y_obs,
         n_estimators=args.n_estimators,
@@ -182,11 +182,11 @@ def main():
         metrics=("rmse",),
         calc_input_gradient_at=args.calc_input_gradient_at,
     )
-    y_pred = predict_ensemble(ensemble, x_obs_2d)
-    metrics = get_ensemble_metrics(ensemble)
+    y_pred = predict(ensemble, x_obs_2d)
+    metrics = get_metrics(ensemble)
 
     fig, ax = plt.subplots()
-    plot_ensemble(x_obs, y_obs, y_pred, ax=ax)
+    ax = plot(x_obs, y_obs, y_pred, ax=ax)
     dataset.plot(ax)
     ax.set_xlabel("x", fontsize=12)
     ax.set_ylabel("y", fontsize=12)

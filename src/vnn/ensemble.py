@@ -10,8 +10,8 @@ from sklearn.ensemble import BaggingRegressor
 from vnn.mve import MVE, History, MVEModule
 
 
-def get_default_args(**kwargs) -> dict[str, Any]:
-    signature = inspect.signature(fit_ensemble)
+def get_fit_default_args(**kwargs) -> dict[str, Any]:
+    signature = inspect.signature(fit)
     default_args = {
         k: v.default
         for k, v in signature.parameters.items()
@@ -21,7 +21,7 @@ def get_default_args(**kwargs) -> dict[str, Any]:
     return default_args
 
 
-def get_ensemble_weights(ensemble: BaggingRegressor) -> dict[str, np.ndarray]:
+def get_weights(ensemble: BaggingRegressor) -> dict[str, np.ndarray]:
     weights: dict[str, list[np.ndarray]] = {}
     for estimator in ensemble.estimators_:
         model: MVEModule = estimator.model_
@@ -37,7 +37,7 @@ def get_ensemble_weights(ensemble: BaggingRegressor) -> dict[str, np.ndarray]:
     return weights
 
 
-def get_ensemble_metrics(
+def get_metrics(
     ensemble: BaggingRegressor,
 ) -> list[dict[str, float]]:
     check_is_fitted(ensemble)
@@ -59,7 +59,7 @@ def get_ensemble_metrics(
     return aggregated
 
 
-def fit_ensemble(
+def fit(
     X: torch.Tensor,
     y: torch.Tensor,
     n_estimators: int = 10,
@@ -146,7 +146,9 @@ def fit_ensemble(
     return ensemble
 
 
-def predict_ensemble(ensemble: BaggingRegressor, X: torch.Tensor) -> np.ndarray:
+def predict(
+    ensemble: BaggingRegressor, X: torch.Tensor
+) -> tuple[np.ndarray, np.ndarray]:
     """Generate predictions from each estimator in a fitted ensemble.
 
     Parameters
@@ -159,29 +161,30 @@ def predict_ensemble(ensemble: BaggingRegressor, X: torch.Tensor) -> np.ndarray:
 
     Returns
     -------
-    A NumPy array of shape (n_estimators, n_samples, n_features_out) containing
-    predictions from each base estimator.
+    tuple of Numpy arrays.
+        Mean and variance prediction.
     """
     check_is_fitted(ensemble)
 
     n_estimators = ensemble.n_estimators
-    predictions = torch.stack(
+    output = torch.stack(
         [ensemble.estimators_[i].predict(X) for i in range(n_estimators)], axis=0
     )
-    predictions = predictions.detach().numpy()
-    return predictions
+    output = output.detach().numpy()
+    means = output[:, :, 0]
+    mean = means.mean(axis=0)
+    vars_ = output[:, :, 1]
+    var = (vars_ + np.square(means)).mean(axis=0) - np.square(mean)
+    return mean, var
 
 
-def plot_ensemble(
+def plot(
     x_obs: np.ndarray,
     y_obs: np.ndarray,
-    y_pred: np.ndarray,
+    mean: np.ndarray,
+    var: np.ndarray,
     ax: plt.Axes | None = None,
 ) -> plt.Axes:
-    means = y_pred[:, :, 0]
-    mean = means.mean(axis=0)
-    vars_ = y_pred[:, :, 1]
-    var = (vars_ + np.square(means)).mean(axis=0) - np.square(mean)
     lb = mean - 1.96 * np.sqrt(var)
     ub = mean + 1.96 * np.sqrt(var)
 
@@ -212,7 +215,7 @@ def plot_weight_distributions(
     fig : plt.Figure
     """
     check_is_fitted(ensemble)
-    weights = get_ensemble_weights(ensemble)
+    weights = get_weights(ensemble)
 
     n_plots = len(weights)
     fig, axes = plt.subplots(1, n_plots, figsize=(4 * n_plots, 4), sharey=False)
