@@ -1,6 +1,7 @@
 import argparse
 import io
 import multiprocessing as mp
+from typing import Any
 
 import matplotlib.pyplot as plt
 import mlflow
@@ -66,14 +67,14 @@ reg_configs = [
         "cauchy_penalty": 0.0,
         "cauchy_scale": 0.0,
     },
-    # --- Cauchy (vary penalty) ---
     {
-        "reg_type": "cauchy",
-        "l1_penalty": 0.0,
+        "reg_type": "l1",
+        "l1_penalty": 1e-4,
         "l2_penalty": 0.0,
-        "cauchy_penalty": 1e-1,
-        "cauchy_scale": 1,
+        "cauchy_penalty": 0.0,
+        "cauchy_scale": 0.0,
     },
+    # --- Cauchy (vary penalty at 1.0 scale) ---
     {
         "reg_type": "cauchy",
         "l1_penalty": 0.0,
@@ -95,13 +96,13 @@ reg_configs = [
         "cauchy_penalty": 1e-4,
         "cauchy_scale": 1,
     },
-    # --- Cauchy (vary scale) ---
+    # --- Cauchy (vary penalty at 0.5 scale) ---
     {
         "reg_type": "cauchy",
         "l1_penalty": 0.0,
         "l2_penalty": 0.0,
-        "cauchy_penalty": 1e-3,
-        "cauchy_scale": 0.1,
+        "cauchy_penalty": 1e-2,
+        "cauchy_scale": 0.5,
     },
     {
         "reg_type": "cauchy",
@@ -114,36 +115,52 @@ reg_configs = [
         "reg_type": "cauchy",
         "l1_penalty": 0.0,
         "l2_penalty": 0.0,
-        "cauchy_penalty": 1e-3,
-        "cauchy_scale": 1,
+        "cauchy_penalty": 1e-4,
+        "cauchy_scale": 0.5,
+    },
+    # --- Cauchy (vary penalty at 0.1 scale) ---
+    {
+        "reg_type": "cauchy",
+        "l1_penalty": 0.0,
+        "l2_penalty": 0.0,
+        "cauchy_penalty": 1e-2,
+        "cauchy_scale": 0.1,
     },
     {
         "reg_type": "cauchy",
         "l1_penalty": 0.0,
         "l2_penalty": 0.0,
         "cauchy_penalty": 1e-3,
-        "cauchy_scale": 5,
+        "cauchy_scale": 0.1,
+    },
+    {
+        "reg_type": "cauchy",
+        "l1_penalty": 0.0,
+        "l2_penalty": 0.0,
+        "cauchy_penalty": 1e-4,
+        "cauchy_scale": 0.1,
+    },
+    # --- Cauchy (vary penalty at 5.0 scale) ---
+    {
+        "reg_type": "cauchy",
+        "l1_penalty": 0.0,
+        "l2_penalty": 0.0,
+        "cauchy_penalty": 1e-2,
+        "cauchy_scale": 5.0,
     },
     {
         "reg_type": "cauchy",
         "l1_penalty": 0.0,
         "l2_penalty": 0.0,
         "cauchy_penalty": 1e-3,
-        "cauchy_scale": 10,
+        "cauchy_scale": 5.0,
     },
     {
         "reg_type": "cauchy",
         "l1_penalty": 0.0,
         "l2_penalty": 0.0,
-        "cauchy_penalty": 1e-3,
-        "cauchy_scale": 15,
-    },
-    {
-        "reg_type": "cauchy",
-        "l1_penalty": 0.0,
-        "l2_penalty": 0.0,
-        "cauchy_penalty": 1e-3,
-        "cauchy_scale": 20,
+        "cauchy_penalty": 1e-4,
+        "cauchy_scale": 5.0,
     },
 ]
 
@@ -201,7 +218,12 @@ def create_parser() -> argparse.ArgumentParser:
 
 
 def make_configs(parsed_args: argparse.Namespace) -> list[dict]:
-    seeds = [0, 1, 2, 3, 4]
+    """Creates experiment configurations.
+
+    Combines `reg_configs` (global) and parsed cli args to create
+    multiple training configurations.
+    """
+    seeds = [0, 1, 2]
 
     base = {
         "activation_fn": parsed_args.activation_fn,
@@ -223,10 +245,21 @@ def make_configs(parsed_args: argparse.Namespace) -> list[dict]:
     return all_configs
 
 
-def train_with_config(config: dict) -> None:
+def train_with_config(config: dict[str, Any]) -> None:
+    """Function to be run on each process.
+
+    Parameters
+    ----------
+    config : dict[str, Any]:
+        Configuration for the current run.
+
+    References
+    ----------
+    [1] https://mlflow.org/docs/latest/ml/tracking/tracking-api/#parallel-execution-strategies
+    """
     # Set tracking URI in each process (required for spawn method)
     mlflow.set_tracking_uri("http://127.0.0.1:5000")
-    mlflow.set_experiment("run_regularizers_experiment_multiprocessing")
+    mlflow.set_experiment("regularizers_multiprocessing_cauchy_scaling")
 
     with mlflow.start_run(run_name=config["run_name"]):
         fit_args = get_fit_default_args(
@@ -245,27 +278,27 @@ def train_with_config(config: dict) -> None:
         x, y = dataset.sample(config["n_samples"])
         X = x.reshape(-1, 1)
 
-        # ---- Train/Test split ----
+        # Train/test split.
         X_tr, X_te, y_tr, y_te = train_test_split(
             X, y, test_size=config["test_size"], random_state=config["seed"]
         )
         X_tr, X_te, y_tr = map(torch.from_numpy, (X_tr, X_te, y_tr))
 
-        # ---- Fit ----
+        # Fit ensemble.
         ensemble = fit(X=X_tr, y=y_tr, **fit_args)
         metrics = get_metrics(ensemble)
         weights = get_weights(ensemble)
 
-        # ---- Predictions ----
+        # Compute predictions.
         mean_tr, var_tr = predict(ensemble, X_tr)
         mean_te, var_te = predict(ensemble, X_te)
 
-        # --- To Numpy ---
+        # Cast to NumPy for plotting.
         X_tr = X_tr.detach().numpy().flatten()
         y_tr = y_tr.detach().numpy()
         X_te = X_te.detach().numpy()
 
-        # ---- Figures ----
+        # Create figures.
         fig, ax = plt.subplots()
         plot(X_tr, y_tr, mean_tr, var_tr, ax=ax)
         dataset.plot(ax)
@@ -276,37 +309,37 @@ def train_with_config(config: dict) -> None:
         ax.set_axisbelow(True)
         plt.tight_layout()
 
-        # ---- Log scalar params ----
+        # Mlflow logging
+        # ^^^^^^^^^^^^^^
+
+        # Log scalar params.
         mlflow.log_params(fit_args)
         mlflow.log_param("seed", config["seed"])
+        mlflow.log_param("reg_type", config["reg_type"])
 
-        # ---- Log training metrics ----
+        # Log training metrics.
         for step, epoch_metrics in enumerate(metrics):
             mlflow.log_metrics(epoch_metrics, step=step)
 
-        # ---- Log test metrics ----
+        # Log test metrics.
         test_rmse = root_mean_squared_error(y_te, mean_te)
         mlflow.log_metric("test_rmse", test_rmse)
 
-        # ---- Log figure ----
-        mlflow.log_figure(fig, f"figures/seed_{config['seed']}.png")
+        # Log figure.
+        mlflow.log_figure(fig, "ensemble_plot.png")
         plt.close(fig)
 
-        # ---- Log weights distribution ----
-        reg_type = config["reg_type"]
-
+        # Log weights distribution.
         for subnet_name, w in weights.items():
             w_abs = np.abs(w)
-            max_w = w_abs.max()
-            upper = max(2.0, max_w * 1.05)
-            thresholds = np.linspace(0.0, upper, 100)
+            thresholds = np.linspace(0.0, 15, 1500)
             survival = np.array([(w_abs > t).mean() for t in thresholds])
 
             df = pd.DataFrame(
                 {
                     "threshold": thresholds,
                     "survival_prob": survival,
-                    "reg_type": reg_type,
+                    "reg_type": config["reg_type"],
                     "seed": config["seed"],
                     "subnet": subnet_name,
                 }
@@ -314,8 +347,7 @@ def train_with_config(config: dict) -> None:
 
             csv_buffer = io.StringIO()
             df.to_csv(csv_buffer, index=False)
-
-            artifact_name = f"weight_survival/{subnet_name}/seed_{config['seed']}.csv"
+            artifact_name = f"weight_survival_{subnet_name}.csv"
             mlflow.log_text(csv_buffer.getvalue(), artifact_name)
 
 

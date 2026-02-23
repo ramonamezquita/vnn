@@ -185,9 +185,15 @@ def plot(
     var: np.ndarray,
     ax: plt.Axes | None = None,
 ) -> plt.Axes:
+    # Sort by `x_obs`.
+    idx = np.argsort(x_obs)
+    x_obs = x_obs[idx]
+    y_obs = y_obs[idx]
+    mean = mean[idx]
+    var = var[idx]
+
     lb = mean - 1.96 * np.sqrt(var)
     ub = mean + 1.96 * np.sqrt(var)
-
     if ax is None:
         ax = plt.subplot()
 

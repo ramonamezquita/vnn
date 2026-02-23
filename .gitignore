@@ -17,3 +17,10 @@ mlartifacts/
 mlflow.db
 mlruns/
 mlflow.db-journal
+artifact_downloads/
+
+# jupyter
+*.ipynb
+
+# media
+*.pdf
