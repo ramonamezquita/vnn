@@ -7,7 +7,6 @@ from typing import Callable
 
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
 from scipy.ndimage import gaussian_filter1d
 
 DeterministicFunction = Callable[[np.ndarray], np.ndarray]
@@ -15,11 +14,18 @@ StochasticFunction = Callable[[np.ndarray, np.random.Generator], np.ndarray]
 
 
 NUMPY_DTYPE = np.float32
-TORCH_DTYPE = torch.float32
 
 
 def plot_dataset(
-    x_full, x_obs, u_true, u_forward, y_obs, y_pred, lb, ub, ax=None
+    x_full,
+    x_obs,
+    u_true,
+    u_forward,
+    y_obs,
+    y_pred,
+    lb,
+    ub,
+    ax=None,
 ) -> plt.Axes:
     if ax is None:
         ax = plt.subplot()
@@ -127,22 +133,6 @@ class Dataset:
         y_obs = self.u_forward[indices] + self.eps(x_obs, self.rng)
         return x_obs, y_obs
 
-    def plot(self, ax: plt.Axes | None = None) -> plt.Axes:
-        if ax is None:
-            ax = plt.subplot()
-
-        ax.plot(
-            self.x, self.u_true, linestyle="dotted", label="Truth u", color="maroon"
-        )
-        ax.plot(
-            self.x,
-            self.u_forward,
-            linestyle="solid",
-            color="cornflowerblue",
-            label="Blurred model",
-        )
-        return ax
-
 
 def gen_sinusoidal() -> Dataset:
     x = np.linspace(0, np.pi / 2, 128, dtype=NUMPY_DTYPE)
@@ -183,14 +173,14 @@ def gen_piecewise() -> Dataset:
                 (0.5 <= x) & (x < 0.75),
                 (0.75 <= x) & (x <= 1),
             ],
-            [-0.5, 0.5, -1, 0],
+            [-0.5, 0.5, -1.5, 0],
         )
 
     return Dataset(
         x,
         U,
         F=make_gaussian_filter(scale=2.0),
-        eps=make_gaussian_noise(0.05),
+        eps=make_gaussian_noise(scale=0.05),
     )
 
 

@@ -1,31 +1,16 @@
-"""
-This module estimates the mean and variance of a noisy observation model by
-following the two steps approach described in [1].
-
-- Stage 1: Train keeping variance parameters fixed (warm-up stage).
-- Stage 2: Train in full.
-
-References
-----------
-[1] Nix, D. A. and Weigend, A. S., "Estimating the mean and variance of the
-target probability distribution", Proceedings of 1994 IEEE International
-Conference on Neural Networks (ICNN'94), Orlando, FL, USA, 1994, pp. 55-60
-vol.1, doi: 10.1109/ICNN.1994.374138.
-"""
-
 from typing import Callable, Iterator, Literal, Protocol, Self
 
+import numpy as np
 import torch
+import torch.nn.functional as F
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils.validation import check_is_fitted
 from torch import nn, optim
+from torch.utils.data import DataLoader, TensorDataset
 
-from vnn.datasets import TORCH_DTYPE
-from vnn.metrics import get_metric
-from vnn.regularizers import ModelRegularizer
+from vnn.regularizers import RegularizerOptions, create_regularizer
 
 ActivationFunction = Callable[[torch.Tensor], torch.Tensor]
-CRITERION = nn.GaussianNLLLoss()
 
 
 class Metric(Protocol):
@@ -61,23 +46,6 @@ class History:
     def last(self) -> dict[str, float]:
         """Return last saved metrics."""
         return self._history[-1].copy()
-
-
-def train_step(
-    model: nn.Module,
-    optimizer: optim.Optimizer,
-    X: torch.Tensor,
-    y: torch.Tensor,
-    regularizer: Regularizer,
-) -> float:
-    """Performs a single training step on a batch."""
-    optimizer.zero_grad()
-    outputs = model(X)
-    loss = CRITERION(outputs[:, 0], y, outputs[:, 1])
-    loss += regularizer(model)
-    loss.backward()
-    optimizer.step()
-    return loss.item()
 
 
 class MLP(nn.Module):
@@ -123,8 +91,8 @@ class MLP(nn.Module):
         return self.sequential(x)
 
 
-class MVEModule(nn.Module):
-    """Mean-Variance-Estimation network.
+class MVE(nn.Module):
+    """Mean-Variance-Estimation (MVE) network.
 
     Parameters
     ----------
@@ -166,12 +134,8 @@ class MVEModule(nn.Module):
         return torch.concat((self.mean(x), self.sigma2(x)), axis=1)
 
 
-class MVE(BaseEstimator, TransformerMixin):
-    """Sklearn compatible Mean-Variance-Estimation network.
-
-    Training is performed in two stages: a warm-up phase where only the mean
-    parameters are updated, followed by joint optimization of both mean and
-    variance parameters.
+class MVERegressor(BaseEstimator, TransformerMixin):
+    """Sklearn compatible MLP network.
 
     Scikit-learn compatibility allows the estimator to be used with ensemble
     methods such as bagging.
@@ -190,7 +154,7 @@ class MVE(BaseEstimator, TransformerMixin):
     learning_rate: float = 1e-3
         Learning rate.
 
-    activation_fn : str, {"sigmoid", "relu"}, default="sigmoid"
+    activation_fn : str, {"sigmoid", "relu", "tanh"}, default="sigmoid"
         Activation function for hidden layer.
 
     l2_penalty : float, default=0.0
@@ -198,30 +162,32 @@ class MVE(BaseEstimator, TransformerMixin):
 
     l1_penalty : float, default=0.0
         L1 regularization factor.
+
+    cauchy_scale: float, default=1.0
+        Cauchy regualization scale.
+
+    metrics: tuple of str, default=()
+        Metrics to keep record during training.
     """
 
-    default_metrics = (
-        "loss",
-        "mean_weight_l1_norm",
-        "mean_weight_l2_norm",
-        "sigma2_weight_l1_norm",
-        "sigma2_weight_l2_norm",
-    )
-    name_to_function = {"sigmoid": nn.Sigmoid(), "relu": nn.ReLU(), "tanh": nn.Tanh()}
+    default_metrics: tuple[str] = ("loss",)
+    name_to_function: dict[str, nn.Module] = {
+        "sigmoid": nn.Sigmoid(),
+        "relu": nn.ReLU(),
+        "tanh": nn.Tanh(),
+    }
 
     def __init__(
         self,
         hidden_layer_sizes: tuple[int] = (100,),
-        n_total_epochs: int = 5000,
+        n_total_epochs: int = 10000,
         n_warmup_epochs: int = 5000,
         learning_rate: float = 1e-3,
-        activation_fn: Literal["sigmoid", "relu"] = "sigmoid",
+        activation_fn: Literal["sigmoid", "relu", "tanh"] = "sigmoid",
         l2_penalty: float = 0.0,
         l1_penalty: float = 0.0,
-        cauchy_penalty: float = 0.0,
-        cauchy_scale: float = 0.1,
+        cauchy_scale: float = 0.0,
         metrics: tuple[str] = (),
-        calc_input_gradient_at: tuple[float] = (),
     ):
         self.hidden_layer_sizes = hidden_layer_sizes
         self.n_total_epochs = n_total_epochs
@@ -230,33 +196,45 @@ class MVE(BaseEstimator, TransformerMixin):
         self.activation_fn = activation_fn
         self.l2_penalty = l2_penalty
         self.l1_penalty = l1_penalty
-        self.cauchy_penalty = cauchy_penalty
         self.cauchy_scale = cauchy_scale
         self.metrics = metrics
-        self.calc_input_gradient_at = calc_input_gradient_at
 
-    def get_metric_names(self) -> tuple[str]:
-        metric_names = self.metrics + self.default_metrics
-        gradient_names = tuple(f"grad_at_{x}" for x in self.calc_input_gradient_at)
-        return metric_names + gradient_names
+    def fit(self, X: np.ndarray, y: np.ndarray) -> Self:
+        self.history_ = History(self.metrics + self.default_metrics)
 
-    def fit(self, X: torch.Tensor, y: torch.Tensor) -> Self:
-        self.history_ = History(self.get_metric_names())
+        X = torch.as_tensor(X, dtype=torch.float32)
+        y = torch.as_tensor(y, dtype=torch.float32)
 
-        X = torch.as_tensor(X, dtype=TORCH_DTYPE)
-        y = torch.as_tensor(y, dtype=TORCH_DTYPE)
+        train_dataloader = DataLoader(
+            TensorDataset(X, y), batch_size=X.shape[0], shuffle=True
+        )
 
-        model = MVEModule(
+        model = MVE(
             hidden_layer_sizes=self.hidden_layer_sizes,
             hidden_activation_fn=self.name_to_function[self.activation_fn],
         )
         optimizer = optim.Adam(model.parameters(), lr=self.learning_rate)
-        regularizer = self.get_regularizer()
+
+        # NOTE: Both `regularizer` and `criterion` must be reduced using the
+        # same aggregating function (e.g., "mean"), so that they remain on
+        # the same scale.
+        reg_options = RegularizerOptions(
+            l1_penalty=self.l1_penalty,
+            l2_penalty=self.l2_penalty,
+            cauchy_scale=self.cauchy_scale,
+        )
+        regularizer = create_regularizer(reg_options)
 
         # Stage 1: Train keeping variance parameters fixed (warm-up stage).
+        # Save computations by not updating variance subnetwork weights until
+        # y(x) is somewhat close to f(x).
         model.sigma2.requires_grad_(False)
         self.fit_loop(
-            model, X, y, optimizer, regularizer, n_epochs=self.n_warmup_epochs
+            model=model,
+            dataloder=train_dataloader,
+            optimizer=optimizer,
+            regularizer=regularizer,
+            n_epochs=self.n_warmup_epochs,
         )
 
         # Stage 2: Train in full.
@@ -264,11 +242,10 @@ class MVE(BaseEstimator, TransformerMixin):
         # are updated until the total number of epochs is reached.
         model.sigma2.requires_grad_(True)
         self.fit_loop(
-            model,
-            X,
-            y,
-            optimizer,
-            regularizer,
+            model=model,
+            dataloder=train_dataloader,
+            optimizer=optimizer,
+            regularizer=regularizer,
             n_epochs=self.n_total_epochs - self.n_warmup_epochs,
         )
 
@@ -276,64 +253,43 @@ class MVE(BaseEstimator, TransformerMixin):
 
         return self
 
-    def predict(self, X: torch.Tensor) -> torch.Tensor:
-        check_is_fitted(self)
-        self.model_.eval()
-        return self.model_(X)
-
-    def get_regularizer(self) -> ModelRegularizer:
-        regularizer = ModelRegularizer()
-        if self.l1_penalty > 0.0:
-            regularizer.add_l1_regularizer(self.l1_penalty)
-        if self.l2_penalty > 0.0:
-            regularizer.add_l2_regularizer(self.l2_penalty)
-        if self.cauchy_penalty > 0.0:
-            regularizer.add_cauchy_regularizer(self.cauchy_penalty, self.cauchy_scale)
-        return regularizer
-
-    def calc_metrics(
-        self, y_true: torch.Tensor, y_pred: torch.Tensor
-    ) -> dict[str, float]:
-        metrics = {}
-        for metric_name in self.metrics:
-            metrics[metric_name] = get_metric(metric_name)(y_true, y_pred[:, 0])
-        return metrics
-
-    def calc_input_gradients(self, model: MVEModule) -> dict[str, float]:
-        grads = {}
-        for x in self.calc_input_gradient_at:
-            X = torch.tensor([[x]], dtype=TORCH_DTYPE, requires_grad=True)
-            model.mean(X).backward()
-            grads[f"grad_at_{x}"] = X.grad.item()
-        return grads
-
-    def calc_weight_norms(self, model: MVEModule) -> dict[str, float]:
-        result = {}
-        for name in ("mean", "sigma2"):
-            subnetwork = getattr(model, name)
-            params = torch.cat([p.detach().flatten() for p in subnetwork.parameters()])
-            result[f"{name}_weight_l1_norm"] = params.abs().sum().item()
-            result[f"{name}_weight_l2_norm"] = params.pow(2).sum().sqrt().item()
-        return result
-
     def fit_loop(
         self,
-        model: MVEModule,
-        X: torch.Tensor,
-        y: torch.Tensor,
+        model: MVE,
+        dataloder: DataLoader,
         optimizer: optim.Optimizer,
         regularizer: Regularizer,
         n_epochs: int,
     ) -> None:
-        model.train(True)
         for _ in range(n_epochs):
-            loss = train_step(model, optimizer, X, y, regularizer=regularizer)
-            with torch.no_grad():
-                y_pred = model(X)
+            model.train()
+            running_loss: float = 0.0
+            for X, y in dataloder:
+                optimizer.zero_grad()
+                outputs = model(X)
 
-            epoch_metrics = {}
-            epoch_metrics.update(self.calc_metrics(y_true=y, y_pred=y_pred))
-            epoch_metrics.update(self.calc_weight_norms(model))
-            epoch_metrics.update(self.calc_input_gradients(model))
-            epoch_metrics["loss"] = loss
+                # NLL
+                mean = outputs[:, 0]
+                var = outputs[:, 1]
+                nll = F.gaussian_nll_loss(mean, y, var, reduction="mean")
+
+                # NLL + Regularization
+                loss = nll + regularizer(model)
+
+                # Update
+                loss.backward()
+                optimizer.step()
+
+                running_loss += loss.item()
+
+            # Metrics
+            epoch_metrics = {"loss": running_loss / len(dataloder)}
             self.history_.save(**epoch_metrics)
+
+    @torch.no_grad()
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        check_is_fitted(self)
+        self.model_.eval()
+        X = torch.as_tensor(X, dtype=torch.float32)
+        output: torch.Tensor = self.model_(X)
+        return output.detach().numpy()
