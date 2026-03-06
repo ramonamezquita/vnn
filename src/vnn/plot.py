@@ -1,3 +1,7 @@
+"""
+Plotting utilities.
+"""
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -40,7 +44,7 @@ def plot_dataset(
 
     ax.plot(
         dataset.x,
-        dataset.u_true,
+        dataset.u_true(),
         linestyle="dotted",
         label="Truth u",
         color="maroon",
@@ -50,7 +54,7 @@ def plot_dataset(
     if include_forward:
         ax.plot(
             dataset.x,
-            dataset.u_forward,
+            dataset.u_forward(),
             linestyle="solid",
             linewidth=2.5,
             color="tab:blue",

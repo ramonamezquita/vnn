@@ -1,19 +1,6 @@
 import argparse
-import inspect
-from typing import Any
 
-from ._usage import run
-
-
-def get_default_args(**kwargs) -> dict[str, Any]:
-    signature = inspect.signature(run)
-    default_args = {
-        k: v.default
-        for k, v in signature.parameters.items()
-        if v.default is not inspect.Parameter.empty
-    }
-    default_args.update(kwargs)
-    return default_args
+from ._usage import get_default_args
 
 
 def create_parser() -> argparse.ArgumentParser:

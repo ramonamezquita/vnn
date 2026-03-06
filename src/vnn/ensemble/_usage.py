@@ -1,4 +1,6 @@
+import inspect
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import torch
@@ -8,7 +10,7 @@ from sklearn.model_selection import train_test_split
 
 from vnn.datasets import Dataset, get_dataset
 
-from ._modules import MVERegressor
+from ._regressor import MVERegressor
 
 
 @dataclass
@@ -25,6 +27,18 @@ class RunResult:
     te_io: TrainingIO
     ensemble: BaggingRegressor
     metrics: list[dict[str, float]]
+    weights: np.ndarray
+
+
+def get_default_args(**kwargs) -> dict[str, Any]:
+    signature = inspect.signature(run)
+    default_args = {
+        k: v.default
+        for k, v in signature.parameters.items()
+        if v.default is not inspect.Parameter.empty
+    }
+    default_args.update(kwargs)
+    return default_args
 
 
 def run(
@@ -124,13 +138,14 @@ def run(
         metrics=metrics,
     )
     metrics = get_metrics(ensemble)
+    weights = get_mean_weights(ensemble)
 
     mean_tr, var_tr = predict(ensemble, X_tr)
     mean_te, var_te = predict(ensemble, X_te)
 
     tr_io = TrainingIO(X_tr.flatten(), y_tr, mean_tr, var_tr)
     te_io = TrainingIO(X_te.flatten(), y_te, mean_te, var_te)
-    return RunResult(tr_io, te_io, ensemble, metrics)
+    return RunResult(tr_io, te_io, ensemble, metrics, weights)
 
 
 def fit(
@@ -184,12 +199,12 @@ def predict(ensemble: BaggingRegressor, X: np.ndarray) -> tuple[np.ndarray, np.n
     ensemble : BaggingRegressor
         A fitted sklearn.ensemble.BaggingRegressor instance.
 
-    X : torch.Tensor
+    X : np.array
         Input tensor.
 
     Returns
     -------
-    Tuple of torch.Tensor.
+    Tuple of np.array.
         Mean and variance prediction.
     """
     check_is_fitted(ensemble)
@@ -208,6 +223,18 @@ def predict(ensemble: BaggingRegressor, X: np.ndarray) -> tuple[np.ndarray, np.n
 # ---------------
 # Public Helpers
 # ---------------
+
+
+def get_mean_weights(ensemble: BaggingRegressor) -> dict[str, np.ndarray]:
+    weights: list[np.ndarray] = []
+    for estimator in ensemble.estimators_:
+        estimator: MVERegressor
+        subnet = estimator.model_.mean
+        w = torch.cat([p.detach().flatten() for p in subnet.parameters()]).numpy()
+        weights.append(w)
+
+    weights = np.concatenate(weights)
+    return weights
 
 
 def get_metrics(ensemble: BaggingRegressor) -> list[dict[str, float]]:

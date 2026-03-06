@@ -25,6 +25,7 @@ def log_to_mlflow(run_result: RunResult, params: dict[str, Any]) -> None:
     _log_io(run_result.te_io, split="test")
     _log_epoch_metrics(run_result.metrics)
     _log_test_rmse(run_result.te_io)
+    _log_weights(run_result.weights)
 
 
 # ----------------
@@ -59,14 +60,12 @@ def _log_test_rmse(te_io: TrainingIO) -> None:
     mlflow.log_metric("test_rmse", test_rmse)
 
 
-def _log_weight_survival(weights: dict[str, np.ndarray]) -> None:
+def _log_weights(weights: np.ndarray) -> None:
     thresholds = np.linspace(0.0, 15, 1500)
-
-    for key, w in weights.items():
-        w_abs = np.abs(w)
-        survival = np.array([(w_abs > t).mean() for t in thresholds])
-        data = {"threshold": thresholds, "survival_prob": survival, "key": key}
-        df = pd.DataFrame(data)
-        buffer = io.StringIO()
-        df.to_csv(buffer, index=False)
-        mlflow.log_text(buffer.getvalue(), f"weight_survival_{key}.csv")
+    w_abs = np.abs(weights)
+    survival = np.array([(w_abs > t).mean() for t in thresholds])
+    data = {"threshold": thresholds, "survival_prob": survival}
+    df = pd.DataFrame(data)
+    buffer = io.StringIO()
+    df.to_csv(buffer, index=False)
+    mlflow.log_text(buffer.getvalue(), "weight_survival.csv")
