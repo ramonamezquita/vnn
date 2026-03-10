@@ -7,9 +7,12 @@ import torch
 from sklearn.base import check_is_fitted
 from sklearn.ensemble import BaggingRegressor
 from sklearn.model_selection import train_test_split
+from torch import nn
 
 from vnn.datasets import Dataset, get_dataset
+from vnn.regularizers import Regularizer
 
+from ._modules import WeightsInitializer
 from ._regressor import MVERegressor
 
 
@@ -48,16 +51,17 @@ def run(
     n_warmup_epochs: int = 5000,
     n_jobs: int = 4,
     n_samples: int = 100,
-    hidden_layer_sizes: tuple[int] = (100,),
+    hidden_layer_sizes: tuple[int, ...] = (100,),
     test_size: float = 0.2,
     random_state: int = 42,
     verbose: int = 2,
     learning_rate: float = 1e-3,
-    l2_penalty: float = 0.0,
-    l1_penalty: float = 0.0,
-    cauchy_scale: float = 0.0,
-    activation_fn: str = "sigmoid",
+    activation_fn: nn.Module = nn.Sigmoid(),
+    weights_initializer: WeightsInitializer | None = None,
+    regularizer: Regularizer | None = None,
+    grad_max_norm: float = 1.0,
     metrics: tuple[str] = (),
+    disable_pbar: bool = False,
 ) -> RunResult:
     """Train and evaluate ensemble.
 
@@ -86,7 +90,7 @@ def run(
     test_size : float, default=0.2
         Test size.
 
-    random_state : int, default=32
+    random_state : int, default=42
         Random seed.
 
     verbose: int, default=2
@@ -95,30 +99,35 @@ def run(
     learning_rate: float = 1e-3
         Learning rate.
 
-    l2_penalty : float, default=0.0
-        L2 regularization factor.
+    activation_fn : nn.Module, default=nn.Sigmoid()
+        Activation function for hidden layers.
 
-    l1_penalty : float, default=0.0
-        L1 regularization factor.
+    weights_initializer: WeightsInitializer or None, default=None
+        Weights initializer for mean subnetwork.
 
-    cauchy_scale: float, default=1.0
-        Cauchy regualization scale.
+    regularizer : Regularizer or None, default=None
+        Regularizer during training.
 
-    activation_fn : str, {"sigmoid", "relu"}, default="sigmoid"
-        Activation function for hidden layer.
+    grad_max_norm : float, default=1.0
+        Grad max norm for gradient clipping.
 
     metrics : tuple of str, default=()
         Metric to track during training.
     """
-
     dataset: Dataset = get_dataset(dataset)
-    x, y = dataset.sample(n_samples)
+    x, y = dataset.sample(n_samples, seed=random_state)
     x, y = map(torch.from_numpy, (x, y))
     X = x.reshape(-1, 1)
 
-    X_tr, X_te, y_tr, y_te = train_test_split(
-        X, y, test_size=test_size, random_state=random_state
-    )
+    if test_size > 0.0:
+        X_tr, X_te, y_tr, y_te = train_test_split(
+            X, y, test_size=test_size, random_state=random_state
+        )
+    else:
+        X_tr = X
+        y_tr = y
+        X_te = None
+        y_te = None
 
     ensemble = fit(
         X_tr,
@@ -131,20 +140,26 @@ def run(
         random_state=random_state,
         verbose=verbose,
         learning_rate=learning_rate,
-        l2_penalty=l2_penalty,
-        l1_penalty=l1_penalty,
-        cauchy_scale=cauchy_scale,
         activation_fn=activation_fn,
+        weights_initializer=weights_initializer,
+        regularizer=regularizer,
+        grad_max_norm=grad_max_norm,
         metrics=metrics,
+        disable_pbar=disable_pbar,
     )
     metrics = get_metrics(ensemble)
     weights = get_mean_weights(ensemble)
 
     mean_tr, var_tr = predict(ensemble, X_tr)
-    mean_te, var_te = predict(ensemble, X_te)
-
     tr_io = TrainingIO(X_tr.flatten(), y_tr, mean_tr, var_tr)
-    te_io = TrainingIO(X_te.flatten(), y_te, mean_te, var_te)
+
+    if X_te is not None:
+        X_te: np.ndarray
+        mean_te, var_te = predict(ensemble, X_te)
+        te_io = TrainingIO(X_te.flatten(), y_te, mean_te, var_te)
+    else:
+        te_io = None
+
     return RunResult(tr_io, te_io, ensemble, metrics, weights)
 
 
@@ -155,15 +170,16 @@ def fit(
     n_total_epochs: int,
     n_warmup_epochs: int,
     n_jobs: int,
-    hidden_layer_sizes: tuple[int],
+    hidden_layer_sizes: tuple[int, ...],
     random_state: int,
     verbose: int,
     learning_rate: float,
-    l2_penalty: float,
-    l1_penalty: float,
-    cauchy_scale: float,
-    activation_fn: str,
+    activation_fn: nn.Module,
+    weights_initializer: WeightsInitializer,
+    regularizer: Regularizer,
+    grad_max_norm: float,
     metrics: tuple[str],
+    disable_pbar: bool,
 ) -> BaggingRegressor:
 
     base_regressor = MVERegressor(
@@ -172,10 +188,11 @@ def fit(
         n_warmup_epochs=n_warmup_epochs,
         learning_rate=learning_rate,
         activation_fn=activation_fn,
-        l2_penalty=l2_penalty,
-        l1_penalty=l1_penalty,
-        cauchy_scale=cauchy_scale,
+        weights_initializer=weights_initializer,
+        regularizer=regularizer,
+        grad_max_norm=grad_max_norm,
         metrics=metrics,
+        disable_pbar=disable_pbar,
     )
 
     ensemble = BaggingRegressor(

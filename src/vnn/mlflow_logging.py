@@ -22,10 +22,13 @@ def log_to_mlflow(run_result: RunResult, params: dict[str, Any]) -> None:
     """
     _log_params(params)
     _log_io(run_result.tr_io, split="train")
-    _log_io(run_result.te_io, split="test")
+    
     _log_epoch_metrics(run_result.metrics)
-    _log_test_rmse(run_result.te_io)
     _log_weights(run_result.weights)
+
+    if run_result.te_io is not None:
+        _log_io(run_result.te_io, split="test")
+        _log_test_rmse(run_result.te_io)
 
 
 # ----------------

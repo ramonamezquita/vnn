@@ -1,4 +1,4 @@
-from typing import Iterator, Literal, Self
+from typing import Iterator, Self
 
 import numpy as np
 import torch
@@ -6,15 +6,13 @@ import torch.nn.functional as F
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils.validation import check_is_fitted
 from torch import nn, optim
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader, TensorDataset
+from tqdm import tqdm
 
-from vnn.regularizers import (
-    Regularizer,
-    RegularizerOptions,
-    build_regularizer,
-)
+from vnn.regularizers import Regularizer, ZeroRegularizer
 
-from ._modules import MVE
+from ._modules import MVE, WeightsInitializer, make_sigma2_bias_init
 
 
 class History:
@@ -63,17 +61,17 @@ class MVERegressor(BaseEstimator, TransformerMixin):
     learning_rate: float = 1e-3
         Learning rate.
 
-    activation_fn : str, {"sigmoid", "relu", "tanh"}, default="sigmoid"
+    activation_fn : nn.Module, default=nn.Sigmoid()
         Activation function for hidden layer.
 
-    l2_penalty : float, default=0.0
-        L2 regularization factor.
+    weights_initializer : WeightsInitializer | None, default=None
+        Weights initializer for mean subnetwork.
 
-    l1_penalty : float, default=0.0
-        L1 regularization factor.
+    regularizer : Regularizer | None = None
+        Weights regularizer during training.
 
-    cauchy_scale: float, default=1.0
-        Cauchy regualization scale.
+    grad_max_norm : float, default=1.0
+        Grad max norm for gradient clipping.
 
     metrics: tuple of str, default=()
         Metrics to keep record during training.
@@ -99,76 +97,94 @@ class MVERegressor(BaseEstimator, TransformerMixin):
         n_total_epochs: int = 10000,
         n_warmup_epochs: int = 5000,
         learning_rate: float = 1e-3,
-        activation_fn: Literal["sigmoid", "relu", "tanh"] = "sigmoid",
-        l2_penalty: float = 0.0,
-        l1_penalty: float = 0.0,
-        cauchy_scale: float = 0.0,
+        activation_fn: nn.Module = nn.Sigmoid(),
+        weights_initializer: WeightsInitializer | None = None,
+        regularizer: Regularizer | None = None,
+        grad_max_norm: float = 1.0,
         metrics: tuple[str] = (),
+        disable_pbar: bool = False,
     ):
         self.hidden_layer_sizes = hidden_layer_sizes
         self.n_total_epochs = n_total_epochs
         self.n_warmup_epochs = n_warmup_epochs
         self.learning_rate = learning_rate
         self.activation_fn = activation_fn
-        self.l2_penalty = l2_penalty
-        self.l1_penalty = l1_penalty
-        self.cauchy_scale = cauchy_scale
+        self.weights_initializer = weights_initializer
+        self.regularizer = regularizer
+        self.grad_max_norm = grad_max_norm
         self.metrics = metrics
+        self.disable_pbar = disable_pbar
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> Self:
         self.history_ = History(self.metrics + self.default_metrics)
 
+        model = MVE(
+            hidden_layer_sizes=self.hidden_layer_sizes,
+            hidden_activation_fn=self.activation_fn,
+            weights_intitializer=self.weights_initializer,
+        )
+        model = torch.compile(model)
+        regularizer = self.regularizer or ZeroRegularizer()
+
         X = torch.as_tensor(X, dtype=torch.float32)
         y = torch.as_tensor(y, dtype=torch.float32)
-
         train_dataloader = DataLoader(
             TensorDataset(X, y),
             batch_size=X.shape[0],
             shuffle=True,
         )
 
-        model = MVE(
-            hidden_layer_sizes=self.hidden_layer_sizes,
-            hidden_activation_fn=self.name_to_function[self.activation_fn],
-        )
-        optimizer = optim.Adam(model.parameters(), lr=self.learning_rate)
-
-        # NOTE: Both `regularizer` and `criterion` must be reduced using the
-        # same aggregating function (e.g., "mean"), so that they remain on
-        # the same scale.
-        reg_options = RegularizerOptions(
-            l1_penalty=self.l1_penalty,
-            l2_penalty=self.l2_penalty,
-            cauchy_scale=self.cauchy_scale,
-        )
-        regularizer = build_regularizer(reg_options)
-
         # Stage 1: Train keeping variance parameters fixed (warm-up stage).
         # Save computations by not updating variance subnetwork weights until
         # y(x) is somewhat close to f(x).
         model.sigma2.requires_grad_(False)
+        warmup_optimizer = optim.Adam(model.mean.parameters(), lr=self.learning_rate)
+        scheduler = CosineAnnealingLR(warmup_optimizer, T_max=self.n_warmup_epochs)
         fit_mve(
             model=model,
             dataloader=train_dataloader,
-            optimizer=optimizer,
+            optimizer=warmup_optimizer,
             mean_regularizer=regularizer,
-            var_regularizer=regularizer,
+            var_regularizer=ZeroRegularizer(),
             n_epochs=self.n_warmup_epochs,
+            grad_max_norm=self.grad_max_norm,
             history=self.history_,
+            scheduler=scheduler,
+            disable_pbar=self.disable_pbar,
         )
+
+        # Set the bias of the output variance to the logmse.
+        with torch.no_grad():
+            logmse: float = torch.log(
+                torch.mean((y - model.mean(X).squeeze()) ** 2)
+            ).item()
+
+        model.sigma2.apply(make_sigma2_bias_init(logmse))
 
         # Stage 2: Train in full.
         # For subsequent training, all parameters (from both mean and sigma2 subnetworks)
         # are updated until the total number of epochs is reached.
+        n_remaining_epochs = self.n_total_epochs - self.n_warmup_epochs
         model.sigma2.requires_grad_(True)
+        full_optimizer = optim.Adam(
+            [
+                {"params": model.mean.parameters()},
+                {"params": model.sigma2.parameters(), "weight_decay": 1e-3},
+            ],
+            lr=self.learning_rate,
+        )
+        scheduler = CosineAnnealingLR(full_optimizer, T_max=n_remaining_epochs)
         fit_mve(
             model=model,
             dataloader=train_dataloader,
-            optimizer=optimizer,
+            optimizer=full_optimizer,
             mean_regularizer=regularizer,
-            var_regularizer=regularizer,
-            n_epochs=self.n_total_epochs - self.n_warmup_epochs,
+            var_regularizer=ZeroRegularizer(),
+            n_epochs=n_remaining_epochs,
+            grad_max_norm=self.grad_max_norm,
             history=self.history_,
+            scheduler=scheduler,
+            disable_pbar=self.disable_pbar,
         )
 
         self.model_ = model
@@ -184,6 +200,22 @@ class MVERegressor(BaseEstimator, TransformerMixin):
         return output.detach().numpy()
 
 
+@torch.compile
+def mve_loss(
+    model: MVE,
+    X: torch.Tensor,
+    y: torch.Tensor,
+    mean_regularizer: Regularizer,
+    var_regularizer: Regularizer,
+) -> torch.Tensor:
+    outputs = model(X)
+    mean = outputs[:, 0]
+    var = outputs[:, 1].clamp_min(1e-4)
+    nll = F.gaussian_nll_loss(mean, y, var, reduction="mean")
+    loss = nll + mean_regularizer(model.mean) + var_regularizer(model.sigma2)
+    return loss
+
+
 def fit_mve(
     model: MVE,
     n_epochs: int,
@@ -191,19 +223,37 @@ def fit_mve(
     optimizer: optim.Optimizer,
     mean_regularizer: Regularizer,
     var_regularizer: Regularizer,
+    grad_max_norm: float,
     history: History,
+    scheduler: optim.lr_scheduler.LRScheduler,
+    disable_pbar: bool = False,
 ) -> np.ndarray:
-    for _ in range(n_epochs):
+    pbar = tqdm(range(n_epochs), desc="Epoch", disable=disable_pbar)
+
+    for epoch in pbar:
         model.train()
         running_loss: float = 0.0
+        n_batches = 0
+
         for X, y in dataloader:
             optimizer.zero_grad()
-            outputs = model(X)
-            mean = outputs[:, 0]
-            var = outputs[:, 1]
-            nll = F.gaussian_nll_loss(mean, y, var, reduction="mean")
-            loss = nll + mean_regularizer(model.mean) + var_regularizer(model.sigma2)
+            loss = mve_loss(model, X, y, mean_regularizer, var_regularizer)
             loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_max_norm)
             optimizer.step()
+
             running_loss += loss.item()
-        history.save(loss=running_loss)
+            n_batches += 1
+
+        avg_loss = running_loss / n_batches
+        mean_lr = optimizer.param_groups[0]["lr"]
+        var_lr = (
+            optimizer.param_groups[1]["lr"]
+            if len(optimizer.param_groups) > 1
+            else mean_lr
+        )
+        pbar.set_postfix(
+            loss=f"{avg_loss:.4f}", mean_lr=f"{mean_lr:.1e}", var_lr=f"{var_lr:.1e}"
+        )
+        history.save(loss=avg_loss)
+        scheduler.step()

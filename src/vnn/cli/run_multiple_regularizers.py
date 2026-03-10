@@ -8,30 +8,33 @@ import mlflow
 from vnn.ensemble import create_parser, run
 from vnn.mlflow_logging import log_to_mlflow
 
-EXPERIMENT_NAME = "run_multiple_regularizers"
+EXPERIMENT_NAME = "many_regularizers_many_blocks"
 TRACKING_URI = "http://127.0.0.1:5000"
+
+SEEDS = range(10)
 
 
 reg_configs = [
     # --- L1 ---
     {
         "reg_type": "l1",
-        "l1_penalty": 1.0,
+        "l1_penalty": 0.01, # 1 / 100
         "l2_penalty": 0.0,
-        "cauchy_scale": 0.0,
+        "cauchy_penalty": 0.0,
     },
     # --- L2 ---
     {
         "reg_type": "l2",
         "l1_penalty": 0.0,
-        "l2_penalty": 0.5,
-        "cauchy_scale": 0.0,
+        "l2_penalty": 0.005, # 1 / (2 * 100)
+        "cauchy_penalty": 0.0,
     },
     # --- Cauchy ---
     {
         "reg_type": "cauchy",
         "l1_penalty": 0.0,
         "l2_penalty": 0.0,
+        "cauchy_penalty": 0.01, # 1 / (100)
         "cauchy_scale": 1.0,
     },
 ]
@@ -48,13 +51,14 @@ def make_configs(parsed_args: argparse.Namespace) -> list[dict]:
     configs = []
     for reg_cfg in reg_configs:
         reg_parts = "__".join(f"{k}={v}" for k, v in reg_cfg.items())
-        new_config = copy.deepcopy(base)
-        new_config.update(reg_cfg)
-        new_config["random_state"] = parsed_args.random_state
+        for seed in SEEDS:
+            new_config = copy.deepcopy(base)
+            new_config.update(reg_cfg)
+            new_config["random_state"] = seed
 
-        # Add run name.
-        new_config["run_name"] = f"{reg_parts}__seed={parsed_args.random_state}"
-        configs.append(new_config)
+            # Add run name.
+            new_config["run_name"] = f"{reg_parts}__seed={seed}"
+            configs.append(new_config)
 
     return configs
 
@@ -88,7 +92,7 @@ def train_with_config(config: dict[str, Any]) -> None:
             learning_rate=config["learning_rate"],
             l2_penalty=config["l2_penalty"],
             l1_penalty=config["l1_penalty"],
-            cauchy_scale=config["cauchy_scale"],
+            cauchy_penalty=config["cauchy_penalty"],
             activation_fn=config["activation_fn"],
         )
         log_to_mlflow(run_result, config)

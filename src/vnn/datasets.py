@@ -65,13 +65,11 @@ class Dataset:
         U: DeterministicFunction,
         F: DeterministicFunction = identity,
         eps: StochasticFunction = make_gaussian_noise(),
-        rng: np.random.Generator | None = None,
     ):
         self.x = x
         self.U = U
         self.F = F
         self.eps = eps
-        self.rng = rng or np.random.default_rng()
 
     def __len__(self) -> int:
         return len(self.x)
@@ -82,16 +80,14 @@ class Dataset:
     def u_forward(self) -> np.ndarray:
         return self.F(self.u_true())
 
-    def get_indices(self, n: int) -> np.ndarray:
-        return self.rng.choice(len(self.x), n, replace=False)
-
-    def sample(self, n: int) -> tuple[np.ndarray, np.ndarray]:
+    def sample(self, n: int, seed: int) -> tuple[np.ndarray, np.ndarray]:
         if n > len(self):
             raise ValueError(f"`n` is greater than Dataset size ({len(self)}).")
 
-        indices = sorted(self.get_indices(n))
+        rng = np.random.default_rng(seed=seed)
+        indices = sorted(rng.choice(len(self.x), n, replace=False))
         x_obs = self.x[indices]
-        y_obs = self.u_forward()[indices] + self.eps(x_obs, self.rng)
+        y_obs = self.u_forward()[indices] + self.eps(x_obs, rng)
         return x_obs, y_obs
 
 
@@ -131,7 +127,7 @@ def make_cubic() -> Dataset:
     return Dataset(x, U, eps=make_gaussian_noise(scale=3.0))
 
 
-def make_1d_convolution() -> Dataset:
+def make_1d_block() -> Dataset:
     x = np.linspace(-1, 1, 128, dtype=NUMPY_DTYPE)
 
     def U(x):
@@ -146,14 +142,38 @@ def make_1d_convolution() -> Dataset:
         return np.piecewise(x, condlist, funclist)
 
     return Dataset(
-        x, U, F=make_gaussian_filter(scale=2.0), eps=make_gaussian_noise(scale=0.05)
+        x=x,
+        U=U,
+        F=make_gaussian_filter(scale=2.0),
+        eps=make_gaussian_noise(scale=0.05),
+    )
+
+
+def make_1d_many_blocks() -> Dataset:
+    x = np.linspace(-1, 1, 128, dtype=NUMPY_DTYPE)
+
+    knots = np.array([-1.0, -0.75, -0.40, -0.10, 0.20, 0.55, 0.80, 1.0])
+    heights = np.array([-0.8, 0.5, -1.2, 0.9, -0.4, 1.1, 0.2])
+
+    def U(x):
+        condlist = [(knots[i] <= x) & (x < knots[i + 1]) for i in range(len(knots) - 2)]
+        condlist.append((knots[-2] <= x) & (x <= knots[-1]))  # include right edge
+
+        return np.piecewise(x, condlist, heights)
+
+    return Dataset(
+        x=x,
+        U=U,
+        F=make_gaussian_filter(scale=2.0),
+        eps=make_gaussian_noise(scale=0.05),
     )
 
 
 _NAME_TO_FACTORY: dict[str, DatasetFactory] = {
     "cubic": make_cubic,
     "sinusoidal": make_sinusoidal,
-    "1d_convolution": make_1d_convolution,
+    "1d_block": make_1d_block,
+    "1d_many_blocks": make_1d_many_blocks,
 }
 
 

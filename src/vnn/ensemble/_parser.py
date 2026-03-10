@@ -88,10 +88,16 @@ def create_parser() -> argparse.ArgumentParser:
         help="L1 penalty.",
     )
     parser.add_argument(
+        "--cauchy_penalty",
+        default=default_args["cauchy_penalty"],
+        type=float,
+        help="Cauchy penalty.",
+    )
+    parser.add_argument(
         "--cauchy_scale",
         default=default_args["cauchy_scale"],
         type=float,
-        help="Cauchy scale parameter.",
+        help="Cauchy scale.",
     )
     parser.add_argument(
         "--verbose",

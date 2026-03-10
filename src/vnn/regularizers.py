@@ -9,7 +9,8 @@ from torch import nn
 class RegularizerOptions:
     l1_penalty: float = 0.0
     l2_penalty: float = 0.0
-    cauchy_scale: float = 0.0
+    cauchy_penalty: float = 0.0
+    cauchy_scale: float = 1.0
 
 
 def l2_penalty(weights: torch.Tensor) -> torch.Tensor:
@@ -60,7 +61,7 @@ class RegularizerBuilder:
         )
 
     def build(self) -> Regularizer:
-        regularizers = list(self._regularizers)  # snapshot
+        regularizers = list(self._regularizers)
 
         def regularizer(model: nn.Module) -> torch.Tensor:
             return sum((reg(model) for reg in regularizers), start=torch.tensor(0.0))
@@ -74,6 +75,8 @@ def build_regularizer(reg_options: RegularizerOptions) -> Regularizer:
         builder.add_l1_regularizer(reg_options.l1_penalty)
     if reg_options.l2_penalty > 0.0:
         builder.add_l2_regularizer(reg_options.l2_penalty)
-    if reg_options.cauchy_scale > 0.0:
-        builder.add_cauchy_regularizer(scale=reg_options.cauchy_scale)
+    if reg_options.cauchy_penalty > 0.0:
+        builder.add_cauchy_regularizer(
+            reg_options.cauchy_penalty, reg_options.cauchy_scale
+        )
     return builder.build()
