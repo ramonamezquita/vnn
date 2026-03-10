@@ -113,6 +113,9 @@ def run(
 
     metrics : tuple of str, default=()
         Metric to track during training.
+
+    disable_pbar: bool, default=False
+        If True, progress bar is not displayed.
     """
     dataset: Dataset = get_dataset(dataset)
     x, y = dataset.sample(n_samples, seed=random_state)

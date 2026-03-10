@@ -76,6 +76,9 @@ class MVERegressor(BaseEstimator, TransformerMixin):
     metrics: tuple of str, default=()
         Metrics to keep record during training.
 
+    disable_pbar: bool, default=False
+        If True, progress bar is not displayed.
+
     References
     ----------
     [1] Nix, D. A. and Weigend, A. S., "Estimating the mean and variance of the
@@ -85,23 +88,18 @@ class MVERegressor(BaseEstimator, TransformerMixin):
     """
 
     default_metrics: tuple[str] = ("loss",)
-    name_to_function: dict[str, nn.Module] = {
-        "sigmoid": nn.Sigmoid(),
-        "relu": nn.ReLU(),
-        "tanh": nn.Tanh(),
-    }
 
     def __init__(
         self,
-        hidden_layer_sizes: tuple[int] = (100,),
+        hidden_layer_sizes: tuple[int, ...] = (100,),
         n_total_epochs: int = 10000,
         n_warmup_epochs: int = 5000,
         learning_rate: float = 1e-3,
-        activation_fn: nn.Module = nn.Sigmoid(),
+        activation_fn: nn.Module = nn.Sigmoid,
         weights_initializer: WeightsInitializer | None = None,
         regularizer: Regularizer | None = None,
         grad_max_norm: float = 1.0,
-        metrics: tuple[str] = (),
+        metrics: tuple[str, ...] = (),
         disable_pbar: bool = False,
     ):
         self.hidden_layer_sizes = hidden_layer_sizes
@@ -121,7 +119,7 @@ class MVERegressor(BaseEstimator, TransformerMixin):
         model = MVE(
             hidden_layer_sizes=self.hidden_layer_sizes,
             hidden_activation_fn=self.activation_fn,
-            weights_intitializer=self.weights_initializer,
+            weights_initializer=self.weights_initializer,
         )
         model = torch.compile(model)
         regularizer = self.regularizer or ZeroRegularizer()
@@ -155,9 +153,8 @@ class MVERegressor(BaseEstimator, TransformerMixin):
 
         # Set the bias of the output variance to the logmse.
         with torch.no_grad():
-            logmse: float = torch.log(
-                torch.mean((y - model.mean(X).squeeze()) ** 2)
-            ).item()
+            mean_pred = model(X)[:, 0].squeeze()
+            logmse: float = torch.log(torch.mean((y - mean_pred) ** 2)).item()
 
         model.sigma2.apply(make_sigma2_bias_init(logmse))
 
@@ -166,13 +163,7 @@ class MVERegressor(BaseEstimator, TransformerMixin):
         # are updated until the total number of epochs is reached.
         n_remaining_epochs = self.n_total_epochs - self.n_warmup_epochs
         model.sigma2.requires_grad_(True)
-        full_optimizer = optim.Adam(
-            [
-                {"params": model.mean.parameters()},
-                {"params": model.sigma2.parameters(), "weight_decay": 1e-3},
-            ],
-            lr=self.learning_rate,
-        )
+        full_optimizer = optim.Adam(model.parameters(), lr=self.learning_rate)
         scheduler = CosineAnnealingLR(full_optimizer, T_max=n_remaining_epochs)
         fit_mve(
             model=model,
@@ -200,7 +191,6 @@ class MVERegressor(BaseEstimator, TransformerMixin):
         return output.detach().numpy()
 
 
-@torch.compile
 def mve_loss(
     model: MVE,
     X: torch.Tensor,

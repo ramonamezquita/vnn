@@ -24,7 +24,7 @@ class Exponential(nn.Module):
         self.eps = eps
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.exp(x) + self.eps
+        return torch.exp(x.clamp(max=88.0)) + self.eps
 
 
 class MLP(nn.Module):
@@ -33,16 +33,16 @@ class MLP(nn.Module):
         n_features_in: int,
         hidden_layer_sizes: tuple[int, ...],
         n_features_out: int,
-        hidden_activation_fn: ActivationFunction = nn.Sigmoid(),
-        output_activation_fn: ActivationFunction = nn.Identity(),
+        hidden_activation_fn: Callable[[], ActivationFunction] = nn.Sigmoid,
+        output_activation_fn: Callable[[], ActivationFunction] = nn.Identity,
         weights_initializer: WeightsInitializer | None = None,
     ):
         super().__init__()
         layer_sizes = (n_features_in,) + tuple(hidden_layer_sizes)
         layers = []
         for in_size, out_size in zip(layer_sizes[:-1], layer_sizes[1:]):
-            layers += [nn.Linear(in_size, out_size), hidden_activation_fn]
-        layers += [nn.Linear(layer_sizes[-1], n_features_out), output_activation_fn]
+            layers += [nn.Linear(in_size, out_size), hidden_activation_fn()]
+        layers += [nn.Linear(layer_sizes[-1], n_features_out), output_activation_fn()]
 
         self.sequential = nn.Sequential(*layers)
 
@@ -56,9 +56,9 @@ class MLP(nn.Module):
 class MVE(nn.Module):
     def __init__(
         self,
-        hidden_layer_sizes: tuple[int] = (100,),
-        hidden_activation_fn: ActivationFunction = nn.Sigmoid(),
-        weights_intitializer: WeightsInitializer | None = None,
+        hidden_layer_sizes: tuple[int, ...] = (100,),
+        hidden_activation_fn: Callable[[], ActivationFunction] = nn.Sigmoid,
+        weights_initializer: WeightsInitializer | None = None,
     ):
         super().__init__()
         self.mean = MLP(
@@ -66,19 +66,19 @@ class MVE(nn.Module):
             hidden_layer_sizes=hidden_layer_sizes,
             n_features_out=1,
             hidden_activation_fn=hidden_activation_fn,
-            weights_initializer=weights_intitializer,
+            weights_initializer=weights_initializer,
         )
         self.sigma2 = MLP(
             n_features_in=1,
             hidden_layer_sizes=hidden_layer_sizes,
             n_features_out=1,
             hidden_activation_fn=hidden_activation_fn,
-            output_activation_fn=Exponential(),
+            output_activation_fn=Exponential,
             weights_initializer=zeros_init,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.concat((self.mean(x), self.sigma2(x)), axis=1)
+        return torch.cat((self.mean(x), self.sigma2(x)), dim=1)
 
 
 ###############################
