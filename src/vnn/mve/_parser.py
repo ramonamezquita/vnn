@@ -1,9 +1,9 @@
 import argparse
 
-from ._usage import get_default_args
-
 
 def create_parser() -> argparse.ArgumentParser:
+    from ._ensemble import get_default_args
+
     default_args = get_default_args()
 
     parser = argparse.ArgumentParser(

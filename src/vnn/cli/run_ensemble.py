@@ -1,4 +1,4 @@
-from vnn.ensemble import create_parser, run
+from vnn.mve import create_parser, run
 from vnn.mlflow_logging import log_to_mlflow
 
 

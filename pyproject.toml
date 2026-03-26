@@ -15,6 +15,7 @@ dependencies = [
     "matplotlib>=3.10.7",
     "mlflow>=3.9.0",
     "pandas>=2.3.3",
+    "pytest>=9.0.2",
     "scikit-learn>=1.8.0",
     "scipy>=1.16.3",
     "torch>=2.10.0",

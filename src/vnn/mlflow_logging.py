@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import root_mean_squared_error
 
-from vnn.ensemble import RunResult, TrainingIO
+from vnn.mve import RunResult, TrainingIO
 
 
 def log_to_mlflow(run_result: RunResult, params: dict[str, Any]) -> None:

@@ -10,10 +10,10 @@ from sklearn.model_selection import train_test_split
 from torch import nn
 
 from vnn.datasets import Dataset, get_dataset
+from vnn.initializers import WeightsInitializer
 from vnn.regularizers import Regularizer
 
-from ._modules import WeightsInitializer
-from ._regressor import MVERegressor
+from ._sklearn import MVESklearnRegressor
 
 
 @dataclass
@@ -25,7 +25,7 @@ class TrainingIO:
 
 
 @dataclass
-class RunResult:
+class EnsembleResult:
     tr_io: TrainingIO
     te_io: TrainingIO
     ensemble: BaggingRegressor
@@ -34,7 +34,7 @@ class RunResult:
 
 
 def get_default_args(**kwargs) -> dict[str, Any]:
-    signature = inspect.signature(run)
+    signature = inspect.signature(run_ensemble)
     default_args = {
         k: v.default
         for k, v in signature.parameters.items()
@@ -44,7 +44,7 @@ def get_default_args(**kwargs) -> dict[str, Any]:
     return default_args
 
 
-def run(
+def run_ensemble(
     dataset: str,
     n_estimators: int = 10,
     n_total_epochs: int = 10000,
@@ -62,7 +62,7 @@ def run(
     grad_max_norm: float = 1.0,
     metrics: tuple[str] = (),
     disable_pbar: bool = False,
-) -> RunResult:
+) -> EnsembleResult:
     """Train and evaluate ensemble.
 
     Parameters
@@ -132,60 +132,7 @@ def run(
         X_te = None
         y_te = None
 
-    ensemble = fit(
-        X_tr,
-        y_tr,
-        n_estimators=n_estimators,
-        n_total_epochs=n_total_epochs,
-        n_warmup_epochs=n_warmup_epochs,
-        n_jobs=n_jobs,
-        hidden_layer_sizes=hidden_layer_sizes,
-        random_state=random_state,
-        verbose=verbose,
-        learning_rate=learning_rate,
-        activation_fn=activation_fn,
-        weights_initializer=weights_initializer,
-        regularizer=regularizer,
-        grad_max_norm=grad_max_norm,
-        metrics=metrics,
-        disable_pbar=disable_pbar,
-    )
-    metrics = get_metrics(ensemble)
-    weights = get_mean_weights(ensemble)
-
-    mean_tr, var_tr = predict(ensemble, X_tr)
-    tr_io = TrainingIO(X_tr.flatten(), y_tr, mean_tr, var_tr)
-
-    if X_te is not None:
-        X_te: np.ndarray
-        mean_te, var_te = predict(ensemble, X_te)
-        te_io = TrainingIO(X_te.flatten(), y_te, mean_te, var_te)
-    else:
-        te_io = None
-
-    return RunResult(tr_io, te_io, ensemble, metrics, weights)
-
-
-def fit(
-    X: torch.Tensor,
-    y: torch.Tensor,
-    n_estimators: int,
-    n_total_epochs: int,
-    n_warmup_epochs: int,
-    n_jobs: int,
-    hidden_layer_sizes: tuple[int, ...],
-    random_state: int,
-    verbose: int,
-    learning_rate: float,
-    activation_fn: nn.Module,
-    weights_initializer: WeightsInitializer,
-    regularizer: Regularizer,
-    grad_max_norm: float,
-    metrics: tuple[str],
-    disable_pbar: bool,
-) -> BaggingRegressor:
-
-    base_regressor = MVERegressor(
+    base_regressor = MVESklearnRegressor(
         hidden_layer_sizes=hidden_layer_sizes,
         n_total_epochs=n_total_epochs,
         n_warmup_epochs=n_warmup_epochs,
@@ -208,10 +155,26 @@ def fit(
     )
 
     ensemble.fit(X, y)
-    return ensemble
+
+    metrics = get_metrics(ensemble)
+    weights = get_mean_weights(ensemble)
+
+    mean_tr, var_tr = predict_ensemble(ensemble, X_tr)
+    tr_io = TrainingIO(X_tr.flatten(), y_tr, mean_tr, var_tr)
+
+    if X_te is not None:
+        X_te: np.ndarray
+        mean_te, var_te = predict_ensemble(ensemble, X_te)
+        te_io = TrainingIO(X_te.flatten(), y_te, mean_te, var_te)
+    else:
+        te_io = None
+
+    return EnsembleResult(tr_io, te_io, ensemble, metrics, weights)
 
 
-def predict(ensemble: BaggingRegressor, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def predict_ensemble(
+    ensemble: BaggingRegressor, X: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
     """Generate predictions from each estimator in a fitted ensemble.
 
     Parameters
@@ -248,7 +211,7 @@ def predict(ensemble: BaggingRegressor, X: np.ndarray) -> tuple[np.ndarray, np.n
 def get_mean_weights(ensemble: BaggingRegressor) -> dict[str, np.ndarray]:
     weights: list[np.ndarray] = []
     for estimator in ensemble.estimators_:
-        estimator: MVERegressor
+        estimator: MVESklearnRegressor
         subnet = estimator.model_.mean
         w = torch.cat([p.detach().flatten() for p in subnet.parameters()]).numpy()
         weights.append(w)
