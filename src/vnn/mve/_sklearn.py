@@ -18,7 +18,7 @@ class MVESklearnRegressor(BaseEstimator, TransformerMixin):
 
     Notes
     -----
-    This class has Numpy arrays for input/output.
+    This class accepts Numpy arrays for input/output.
 
     Parameters
     ----------
@@ -104,7 +104,8 @@ class MVESklearnRegressor(BaseEstimator, TransformerMixin):
     @torch.no_grad()
     def predict(self, X: np.ndarray) -> np.ndarray:
         check_is_fitted(self)
+
         self.model_.eval()
         X = torch.as_tensor(X, dtype=torch.float32)
-        output: torch.Tensor = self.model_(X)
-        return output.detach().numpy()
+        output = self.model_(X)
+        return output.numpy()

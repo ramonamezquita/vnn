@@ -218,7 +218,10 @@ def train(
 
     dataloader = DataLoader(TensorDataset(X, y), batch_size=X.shape[0], shuffle=True)
 
-    # Stage 1: Train keeping variance parameters fixed (warm-up stage).
+    # ----------------------
+    # Stage 1: Warm-up
+    # ----------------------
+    # Train keeping variance parameters fixed.
     # Save computations by not updating variance subnetwork weights until
     # y(x) is somewhat close to f(x).
     model.sigma2.requires_grad_(False)
@@ -241,8 +244,10 @@ def train(
 
     model.sigma2.apply(make_sigma2_bias_init(logmse))
 
-    # Stage 2: Train in full.
-    # For subsequent training, all parameters (from both mean and sigma2 subnetworks)
+    # ----------------------
+    # Stage 2: Full training
+    # ----------------------
+    # For subsequent training, all parameters (from both subnetworks)
     # are updated until the total number of epochs is reached.
     n_remaining_epochs = n_total_epochs - n_warmup_epochs
     model.sigma2.requires_grad_(True)
