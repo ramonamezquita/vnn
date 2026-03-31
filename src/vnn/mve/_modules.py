@@ -5,9 +5,11 @@ from typing import Callable
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torch.distributions import Distribution
 
-from vnn.initializers import WeightsInitializer, zeros_init
 from vnn.mlp import MLP, ActivationFunction
+
+from ._initializers import zeros_init
 
 
 def calc_mve_loss(
@@ -36,7 +38,7 @@ class Exponential(nn.Module):
 
 
 class MVELoss(nn.Module):
-    def __int__(self, eps: float = 1e-6, reduction="mean"):
+    def __init__(self, eps: float = 1e-6, reduction="mean"):
         super().__init__()
         self.eps = eps
         self.reduction = reduction
@@ -54,7 +56,7 @@ class MVE(nn.Module):
         self,
         hidden_layer_sizes: tuple[int, ...] = (100,),
         hidden_activation_fn: Callable[[], ActivationFunction] = nn.Sigmoid,
-        weights_initializer: WeightsInitializer | None = None,
+        weights_initializer: Distribution | None = None,
     ):
         super().__init__()
         self.mean = MLP(

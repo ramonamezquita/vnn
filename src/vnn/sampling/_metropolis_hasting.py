@@ -1,7 +1,7 @@
 import torch
 from tqdm import trange
 
-from ._model import ProbabilisticModel
+from ._prob_model import ProbabilisticModel
 from ._proposal import Proposal
 
 
@@ -26,8 +26,8 @@ def metropolis_hasting(
     *,
     model: ProbabilisticModel,
     proposal: Proposal,
+    initial_guess: dict[str, torch.Tensor],
     n_iterations: int = 100,
-    initial_guess: torch.Tensor | None = None,
 ) -> list[dict[str, torch.Tensor]]:
     """Run a Metropolis-Hastings MCMC sampler for a NN posterior distribution.
 
@@ -45,12 +45,12 @@ def metropolis_hasting(
     proposal : Proposal
         Proposal distribution defining q(new | old).
 
+    initial_guess: dict[str, torch.Tensor
+        Initial guess.
+
     n_iterations : int, default=100
         Number of iterations.
-
-    initial_guess: torch.Tensor | None = None
-        Initial guess. If None, all parameters are intialized to zero.
-
+    
     Returns
     -------
     samples : list of dict[str, torch.Tensor]
@@ -60,7 +60,7 @@ def metropolis_hasting(
     pbar = trange(n_iterations, desc="MH Sampling")
 
     W_old = initial_guess
-    parameters_names = list(model.get_named_parameters())
+    parameters_names = list(initial_guess)
     accepts_counter: int = 0
 
     for i in pbar:

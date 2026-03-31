@@ -1,15 +1,13 @@
-from typing import Self
+from typing import Self, Type
 
 import numpy as np
 import torch
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils.validation import check_is_fitted
 from torch import nn
+from torch.distributions import Distribution
 
-from vnn.initializers import WeightsInitializer
-from vnn.regularizers import Regularizer
-
-from ._fit import fit
+from ._train import train
 
 
 class MVESklearnRegressor(BaseEstimator, TransformerMixin):
@@ -39,11 +37,10 @@ class MVESklearnRegressor(BaseEstimator, TransformerMixin):
     activation_fn : nn.Module, default=nn.Sigmoid()
         Activation function for hidden layer.
 
-    weights_initializer : WeightsInitializer | None, default=None
-        Weights initializer for mean subnetwork.
-
-    regularizer : Regularizer | None = None
-        Weights regularizer during training.
+    prior_distr : Distribution or None, default=None
+        Prior distribution for weight initialization and regularization.
+        If None, no regularization is applied and weights are initialized using
+        PyTorch default mechanism.
 
     grad_max_norm : float, default=1.0
         Grad max norm for gradient clipping.
@@ -70,9 +67,8 @@ class MVESklearnRegressor(BaseEstimator, TransformerMixin):
         n_total_epochs: int = 10000,
         n_warmup_epochs: int = 5000,
         learning_rate: float = 1e-3,
-        activation_fn: nn.Module = nn.Sigmoid,
-        weights_initializer: WeightsInitializer | None = None,
-        regularizer: Regularizer | None = None,
+        activation_fn: Type[nn.Module] = nn.Sigmoid,
+        prior_distr: Distribution | None = None,
         grad_max_norm: float = 1.0,
         metrics: tuple[str, ...] = (),
         disable_pbar: bool = False,
@@ -82,8 +78,7 @@ class MVESklearnRegressor(BaseEstimator, TransformerMixin):
         self.n_warmup_epochs = n_warmup_epochs
         self.learning_rate = learning_rate
         self.activation_fn = activation_fn
-        self.weights_initializer = weights_initializer
-        self.regularizer = regularizer
+        self.prior_distr = prior_distr
         self.grad_max_norm = grad_max_norm
         self.metrics = metrics
         self.disable_pbar = disable_pbar
@@ -92,7 +87,7 @@ class MVESklearnRegressor(BaseEstimator, TransformerMixin):
         X = torch.as_tensor(X, dtype=torch.float32)
         y = torch.as_tensor(y, dtype=torch.float32)
 
-        self.model_ = fit(
+        self.model_ = train(
             X,
             y,
             hidden_layer_sizes=self.hidden_layer_sizes,
@@ -100,8 +95,7 @@ class MVESklearnRegressor(BaseEstimator, TransformerMixin):
             n_warmup_epochs=self.n_warmup_epochs,
             learning_rate=self.learning_rate,
             activation_fn=self.activation_fn,
-            weights_initializer=self.weights_initializer,
-            regularizer=self.regularizer,
+            prior_distr=self.prior_distr,
             grad_max_norm=self.grad_max_norm,
             disable_pbar=self.disable_pbar,
         )

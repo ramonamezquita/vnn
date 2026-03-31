@@ -6,10 +6,10 @@ from vnn.mve._ensemble import (
     predict_ensemble,
     run_ensemble,
 )
-from vnn.mve._fit import fit
 from vnn.mve._modules import MLP, MVE
 from vnn.mve._parser import create_parser
 from vnn.mve._sklearn import MVESklearnRegressor
+from vnn.mve._train import train
 
 __all__ = [
     "EnsembleResult",
@@ -18,7 +18,7 @@ __all__ = [
     "get_metrics",
     "predict_ensemble",
     "run_ensemble",
-    "fit",
+    "train",
     "create_parser",
     "MLP",
     "MVE",

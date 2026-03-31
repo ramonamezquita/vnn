@@ -2,10 +2,27 @@
 Plotting utilities.
 """
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 
 from vnn.datasets import Dataset
+
+
+def update_mpl_params(**params) -> None:
+    if not params:
+        params = DEFAULT_MPL_PARAMS
+    mpl.rcParams.update(params)
+
+
+DEFAULT_MPL_PARAMS = {
+    "text.usetex": True,
+    "font.family": "serif",
+    "font.size": 15,
+    "axes.labelsize": 15,
+    "xtick.labelsize": 15,
+    "ytick.labelsize": 15,
+}
 
 
 def plot_95_ci(
