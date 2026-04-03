@@ -1,22 +1,27 @@
-if __name__ == "__main__":
-    import torch
-    from pyro.infer import MCMC, NUTS
-    from torch import nn
+from argparse import Namespace
 
-    from vnn.datasets import get_dataset
-    from vnn.initializers import make_random_init
-    from vnn.mlp import MLP
-    from vnn.sampling import create_parser, get_pyro_distr, make_pyro_model
+import numpy as np
+import torch
+from pyro.infer import MCMC, NUTS
+from torch import nn
 
-    parser = create_parser()
-    args = parser.parse_args()
-    print(f"Called `run_mh` with parameters: {vars(args)}")
+from vnn.datasets import get_dataset
+from vnn.initializers import make_random_init
+from vnn.mlp import MLP
+from vnn.sampling import create_parser, get_pyro_distr, make_pyro_model
+
+
+def main(args: Namespace) -> None:
 
     # ==========
     # Data
     # ==========
     ds = get_dataset(args.dataset)
-    x, y = ds.sample(args.n_samples, seed=args.random_state)
+    rng = np.random.default_rng(args.random_state)
+
+    x = np.linspace(-1, 1, 100)
+    y = ds.y(x, rng)
+
     xtorch = torch.as_tensor(x, dtype=torch.float32).reshape(-1, 1)
     ytorch = torch.as_tensor(y, dtype=torch.float32).reshape(-1, 1)
 
@@ -31,13 +36,15 @@ if __name__ == "__main__":
         hidden_activation_fn=nn.Tanh,
         weights_initializer=make_random_init(prior),
     )
-    pyro_model = make_pyro_model(module, prior, sigma=3.0)
+    pyro_model = make_pyro_model(module, prior, sigma=ds.sigma)
 
     # ============
     # MCMC
     # ============
-    nuts_kernel = NUTS(pyro_model, target_accept_prob=0.7)
-    mcmc = MCMC(nuts_kernel, num_samples=300)
+    nuts_kernel = NUTS(pyro_model, step_size=args.step_size)
+    mcmc = MCMC(
+        nuts_kernel, warmup_steps=args.n_warmup_steps, num_samples=args.n_samples
+    )
     mcmc.run(xtorch, ytorch)
 
     # ============
@@ -46,6 +53,9 @@ if __name__ == "__main__":
     if args.n_plot_samples > 0:
         import matplotlib.pyplot as plt
         from torch.func import functional_call
+
+        x = xtorch.detach().numpy().flatten()
+        y = ytorch.detach().numpy().flatten()
 
         samples = mcmc.get_samples(args.n_plot_samples)
         plt.figure(figsize=(8, 5))
@@ -58,3 +68,10 @@ if __name__ == "__main__":
 
         plt.ylabel("y")
         plt.show()
+
+
+if __name__ == "__main__":
+    parser = create_parser()
+    args = parser.parse_args()
+    print(f"Called `run_mh` with parameters: {vars(args)}")
+    main(args)

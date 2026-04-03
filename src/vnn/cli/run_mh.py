@@ -1,22 +1,22 @@
-if __name__ == "__main__":
-    import torch
-    from torch import nn
-    from torch.distributions import Normal
+from argparse import Namespace
 
-    from vnn.datasets import get_dataset
-    from vnn.initializers import make_random_init
-    from vnn.mlp import MLP
-    from vnn.sampling import (
-        ProbabilisticModel,
-        Proposal,
-        create_parser,
-        get_torch_distr,
-        metropolis_hasting,
-    )
+import torch
+from torch import nn
+from torch.distributions import Normal
 
-    parser = create_parser()
-    args = parser.parse_args()
-    print(f"Called `run_mh` with parameters: {vars(args)}")
+from vnn.datasets import get_dataset
+from vnn.initializers import make_random_init
+from vnn.mlp import MLP
+from vnn.sampling import (
+    ProbabilisticModel,
+    Proposal,
+    create_parser,
+    get_torch_distr,
+    metropolis_hasting,
+)
+
+
+def main(args: Namespace) -> None:
 
     # ==========
     # Data
@@ -74,3 +74,10 @@ if __name__ == "__main__":
 
         plt.ylabel("y")
         plt.show()
+
+
+if __name__ == "__main__":
+    parser = create_parser()
+    args = parser.parse_args()
+    print(f"Called `run_mh` with parameters: {vars(args)}")
+    main(args)

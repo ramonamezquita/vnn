@@ -61,34 +61,33 @@ class Dataset:
 
     def __init__(
         self,
-        x: np.ndarray,
         U: DeterministicFunction,
         F: DeterministicFunction = identity,
-        eps: StochasticFunction = make_gaussian_noise(),
+        sigma: float = 1.0,
     ):
-        self.x = x
         self.U = U
         self.F = F
-        self.eps = eps
+        self.sigma = sigma
 
-    def __len__(self) -> int:
-        return len(self.x)
+    def true(self, x: np.ndarray) -> np.ndarray:
+        return self.U(x)
 
-    def u_true(self) -> np.ndarray:
-        return self.U(self.x)
+    def forward(self, x: np.ndarray) -> np.ndarray:
+        return self.F(self.U(x))
 
-    def u_forward(self) -> np.ndarray:
-        return self.F(self.u_true())
+    def y(self, x: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+        eps = make_gaussian_noise(self.sigma)
+        return self.forward(x) + eps(x, rng)
 
-    def sample(self, n: int, seed: int) -> tuple[np.ndarray, np.ndarray]:
-        if n > len(self):
-            raise ValueError(f"`n` is greater than Dataset size ({len(self)}).")
+    # def sample(self, n: int, seed: int) -> tuple[np.ndarray, np.ndarray]:
+    #     if n > len(self):
+    #         raise ValueError(f"`n` is greater than Dataset size ({len(self)}).")
 
-        rng = np.random.default_rng(seed=seed)
-        indices = sorted(rng.choice(len(self.x), n, replace=False))
-        x_obs = self.x[indices]
-        y_obs = self.u_forward()[indices] + self.eps(x_obs, rng)
-        return x_obs, y_obs
+    #     rng = np.random.default_rng(seed=seed)
+    #     indices = sorted(rng.choice(len(self.x), n, replace=False))
+    #     x_obs = self.x[indices]
+    #     y_obs = self.u_forward()[indices] + self.eps(x_obs, rng)
+    #     return x_obs, y_obs
 
 
 # -------------------
@@ -100,35 +99,15 @@ class DatasetFactory(Protocol):
     def __call__(self) -> Dataset: ...
 
 
-def make_sinusoidal() -> Dataset:
-    x = np.linspace(0, np.pi / 2, 128, dtype=NUMPY_DTYPE)
-
-    w_c = 5
-    w_m = 4
-
-    def U(x: np.ndarray) -> np.ndarray:
-        m_x = np.sin(w_m * x)
-        return m_x * np.sin(w_c * x)
-
-    def eps(x: np.ndarray, rng: np.random.Generator) -> np.ndarray:
-        m_x = np.sin(w_m * x)
-        sigma2 = 0.02 + 0.02 * (1 - m_x) ** 2
-        return rng.normal(0, np.sqrt(sigma2))
-
-    return Dataset(x, U, eps=eps)
-
-
 def make_cubic() -> Dataset:
-    x = np.linspace(-3, 3, 128, dtype=NUMPY_DTYPE)
 
     def U(x: np.ndarray) -> np.ndarray:
         return x**3
 
-    return Dataset(x, U, eps=make_gaussian_noise(scale=3.0))
+    return Dataset(U, sigma=3.0)
 
 
 def make_1d_block() -> Dataset:
-    x = np.linspace(-1, 1, 128, dtype=NUMPY_DTYPE)
 
     def U(x):
         condlist = [
@@ -141,12 +120,7 @@ def make_1d_block() -> Dataset:
 
         return np.piecewise(x, condlist, funclist)
 
-    return Dataset(
-        x=x,
-        U=U,
-        F=make_gaussian_filter(scale=2.0),
-        eps=make_gaussian_noise(scale=0.05),
-    )
+    return Dataset(U=U, F=make_gaussian_filter(scale=2.0), sigma=0.05)
 
 
 def make_1d_many_blocks() -> Dataset:
@@ -161,17 +135,11 @@ def make_1d_many_blocks() -> Dataset:
 
         return np.piecewise(x, condlist, heights)
 
-    return Dataset(
-        x=x,
-        U=U,
-        F=make_gaussian_filter(scale=2.0),
-        eps=make_gaussian_noise(scale=0.05),
-    )
+    return Dataset(x=x, U=U, F=make_gaussian_filter(scale=2.0), sigma=0.05)
 
 
 _NAME_TO_FACTORY: dict[str, DatasetFactory] = {
     "cubic": make_cubic,
-    "sinusoidal": make_sinusoidal,
     "1d_block": make_1d_block,
     "1d_many_blocks": make_1d_many_blocks,
 }

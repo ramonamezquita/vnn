@@ -22,18 +22,17 @@ def create_parser() -> argparse.ArgumentParser:
         help="Random seed.",
         default=0,
     )
-
-    parser.add_argument(
-        "--n_iterations",
-        type=int,
-        help="Number of epochs.",
-        default=1000,
-    )
-
     parser.add_argument(
         "--n_samples",
-        default=100,
+        default=1000,
         type=int,
+        help="The number of samples that need to be generated, excluding the samples discarded during the warmup phase.",
+    )
+    parser.add_argument(
+        "--n_warmup_steps",
+        type=int,
+        help="Number of warmup iterations.",
+        default=200,
     )
     parser.add_argument(
         "--hidden_layer_sizes",
@@ -49,7 +48,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--step_size",
         type=float,
-        default=0.1,
+        default=1.0,
     )
 
     parser.add_argument(

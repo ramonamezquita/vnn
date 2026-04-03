@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable, Type
+from typing import Type
 
 import torch
 import torch.nn.functional as F

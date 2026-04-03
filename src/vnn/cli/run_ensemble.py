@@ -1,12 +1,10 @@
-from vnn.mve import create_parser, run_ensemble
+from argparse import Namespace
+
+from vnn.ensemble import create_parser, train_ensemble
 
 
-def main():
-    parser = create_parser()
-    args = parser.parse_args()
-    print(f"Called `run_ensemble` with parameters: {vars(args)}")
-
-    run_ensemble(
+def main(args: Namespace) -> None:
+    train_ensemble(
         dataset=args.dataset,
         n_estimators=args.n_estimators,
         n_total_epochs=args.n_total_epochs,
@@ -25,4 +23,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = create_parser()
+    args = parser.parse_args()
+    print(f"Called `run_ensemble` with parameters: {vars(args)}")
+    main(args)

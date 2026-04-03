@@ -41,6 +41,6 @@ def make_pyro_model(
         # Our model implies that:
         # y | x ~ N(f(x), sigma)
         # where the mean f(x) is the forward call function.
-        pyro.sample("obs", dist.Normal(mean, sigma), obs=y)
+        return pyro.sample("obs", dist.Normal(mean, sigma), obs=y)
 
     return pyro_model
