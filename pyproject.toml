@@ -9,12 +9,14 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "flax>=0.12.1",
+    "graphviz>=0.21",
     "ipython>=9.8.0",
     "joblib>=1.5.3",
     "jupyter>=1.1.1",
     "matplotlib>=3.10.7",
     "mlflow>=3.9.0",
     "pandas>=2.3.3",
+    "pyro-ppl>=1.9.1",
     "pytest>=9.0.2",
     "scikit-learn>=1.8.0",
     "scipy>=1.16.3",

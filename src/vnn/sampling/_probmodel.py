@@ -2,6 +2,7 @@ from typing import Callable
 
 import torch
 from torch.distributions import Distribution
+from torch.func import functional_call
 
 
 class ProbabilisticModel:
@@ -16,25 +17,20 @@ class ProbabilisticModel:
         self.likelihood = likelihood
 
     def __call__(self, W: dict[str, torch.Tensor], X: torch.Tensor) -> torch.Tensor:
-        self.set_parameters(W)
-        return self.nn(X)
+        return functional_call(self.nn, W, X)
 
     def get_named_parameters(self) -> dict[str, torch.nn.Parameter]:
         return dict(self.nn.named_parameters())
-
-    def set_parameters(self, W: dict[str, torch.Tensor]) -> None:
-        for name, param in self.get_named_parameters().items():
-            param.copy_(W[name])
 
     def log_prob(
         self, W: dict[str, torch.Tensor], X: torch.Tensor, y: torch.Tensor
     ) -> torch.Tensor:
 
-        # The log density is the posterior of the `nn`, which is given by
-        #                   L(W) = log_prior(W) + log_likel(y | loc=NN(W,X))
+        # The log density is the log posterior of the `nn` parameters log p(W | y):
+        #                   log p(W | y) = log p(W) + log p(y | W) - log p(y)
         # where:
-        # > log_prior is the log prior of weights `W`.
-        # > log_likel is log-likelihood of the observed target values `y` centered at NN output.
+        # > log p(W): log-prior of weights `W`.
+        # > log p(y | W): log-likelihood of the observed target values `y`.
         # > (X, y) are the fixed observations.
         log_prior = sum(self.prior.log_prob(w).sum() for w in W.values())
         log_likel = self.likelihood(self(W, X)).log_prob(y).sum()

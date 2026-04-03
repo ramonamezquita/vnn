@@ -1,9 +1,7 @@
-from typing import Callable
+from typing import Callable, Type
 
 import torch
 from torch import nn
-
-ActivationFunction = Callable[[torch.Tensor], torch.Tensor]
 
 
 class MLP(nn.Module):
@@ -12,8 +10,8 @@ class MLP(nn.Module):
         n_features_in: int,
         hidden_layer_sizes: tuple[int, ...],
         n_features_out: int,
-        hidden_activation_fn: Callable[[], ActivationFunction] = nn.Sigmoid,
-        output_activation_fn: Callable[[], ActivationFunction] = nn.Identity,
+        hidden_activation_fn: Type[nn.Module] = nn.Sigmoid,
+        output_activation_fn: Type[nn.Module] = nn.Identity,
         weights_initializer: Callable[[nn.Module], None] | None = None,
     ):
         super().__init__()

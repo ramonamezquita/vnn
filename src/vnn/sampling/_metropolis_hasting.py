@@ -1,16 +1,16 @@
 import torch
 from tqdm import trange
 
-from ._prob_model import ProbabilisticModel
+from ._probmodel import ProbabilisticModel
 from ._proposal import Proposal
 
 
 def accept(
-    log_tgt_new: float,
-    log_tgt_old: float,
-    log_old_given_new: float,
-    log_new_given_old: float,
-) -> bool:
+    log_tgt_new: torch.Tensor,
+    log_tgt_old: torch.Tensor,
+    log_old_given_new: torch.Tensor,
+    log_new_given_old: torch.Tensor,
+) -> torch.BoolTensor:
     """Returns True if accepted."""
 
     log_u = torch.rand(()).log()
@@ -19,7 +19,7 @@ def accept(
     return log_u <= log_alpha  # accept if True.
 
 
-@torch.no_grad
+@torch.no_grad()
 def metropolis_hasting(
     X: torch.Tensor,
     y: torch.Tensor,
@@ -50,7 +50,7 @@ def metropolis_hasting(
 
     n_iterations : int, default=100
         Number of iterations.
-    
+
     Returns
     -------
     samples : list of dict[str, torch.Tensor]
@@ -106,6 +106,6 @@ def metropolis_hasting(
 
         if (i + 1) % 10 == 0:  # update every 10 steps.
             acc_rate = accepts_counter / (i + 1)
-            pbar.set_postfix({"acc_rate": f"{acc_rate:.4f}"})
+            pbar.set_postfix({"acc_rate": f"{acc_rate:.6f}"})
 
     return samples

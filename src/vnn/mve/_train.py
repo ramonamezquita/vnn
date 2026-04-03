@@ -9,7 +9,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, LRScheduler
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
-from ._initializers import make_random_weights_initializer, make_sigma2_bias_init
+from vnn.initializers import make_random_init, make_sigma2_bias_init
 from ._modules import MVE, calc_mve_loss
 
 
@@ -203,7 +203,7 @@ def train(
         If True, disables the progress bar.
     """
 
-    weights_initializer = make_random_weights_initializer(prior_distr)
+    weights_initializer = make_random_init(prior_distr)
 
     model = MVE(
         hidden_layer_sizes=hidden_layer_sizes,

@@ -107,5 +107,4 @@ class MVESklearnRegressor(BaseEstimator, TransformerMixin):
 
         self.model_.eval()
         X = torch.as_tensor(X, dtype=torch.float32)
-        output = self.model_(X)
-        return output.numpy()
+        return self.model_(X).numpy()

@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Type
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.distributions import Distribution
 
-from vnn.mlp import MLP, ActivationFunction
-
-from ._initializers import zeros_init
+from vnn.initializers import zeros_init
+from vnn.mlp import MLP
 
 
 def calc_mve_loss(
@@ -55,7 +54,7 @@ class MVE(nn.Module):
     def __init__(
         self,
         hidden_layer_sizes: tuple[int, ...] = (100,),
-        hidden_activation_fn: Callable[[], ActivationFunction] = nn.Sigmoid,
+        hidden_activation_fn: Type[nn.Module] = nn.Sigmoid,
         weights_initializer: Distribution | None = None,
     ):
         super().__init__()

@@ -21,6 +21,7 @@ artifact_downloads/
 
 # jupyter
 *.ipynb
+notebooks/
 
 # media
 *.pdf
