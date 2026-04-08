@@ -8,9 +8,10 @@ class MLP(nn.Module):
     def __init__(
         self,
         n_features_in: int,
-        hidden_layer_sizes: tuple[int, ...],
         n_features_out: int,
-        hidden_activation_fn: Type[nn.Module] = nn.Sigmoid,
+        hidden_layer_sizes: tuple[int, ...],
+        *,
+        hidden_activation_fn: Type[nn.Module] = nn.Tanh,
         output_activation_fn: Type[nn.Module] = nn.Identity,
         weights_initializer: Callable[[nn.Module], None] | None = None,
     ):

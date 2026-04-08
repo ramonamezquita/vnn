@@ -1,26 +1,45 @@
 from typing import Callable
 
 import torch
+import torch.distributions as dist
 from torch.distributions import Distribution
 from torch.func import functional_call
 
+_NAME_TO_DIST: dict[str, dist.Distribution] = {
+    "normal": dist.Normal,
+    "cauchy": dist.Cauchy,
+    "laplace": dist.Laplace,
+}
 
-class ProbabilisticModel:
+
+def supported_distributions() -> list[str]:
+    return list(_NAME_TO_DIST)
+
+
+def torch_distr(name: str, loc: float = 0.0, scale: float = 1.0) -> dist.Distribution:
+    """Returns torch distribution."""
+    if name not in supported_distributions():
+        raise ValueError(f"Distribution {name} not supported.")
+
+    return _NAME_TO_DIST[name](loc, scale)
+
+
+class TorchProbabilisticModel:
     def __init__(
         self,
-        nn: torch.nn.Module,
+        module: torch.nn.Module,
         prior: Distribution,
         likelihood: Callable[[torch.Tensor], Distribution],
     ):
-        self.nn = nn
+        self.module = module
         self.prior = prior
         self.likelihood = likelihood
 
     def __call__(self, W: dict[str, torch.Tensor], X: torch.Tensor) -> torch.Tensor:
-        return functional_call(self.nn, W, X)
+        return functional_call(self.module, W, X)
 
     def get_named_parameters(self) -> dict[str, torch.nn.Parameter]:
-        return dict(self.nn.named_parameters())
+        return dict(self.module.named_parameters())
 
     def log_prob(
         self, W: dict[str, torch.Tensor], X: torch.Tensor, y: torch.Tensor

@@ -1,14 +1,23 @@
 from argparse import Namespace
+from functools import partial
 
-import numpy as np
-import torch
 from pyro.infer import MCMC, NUTS
-from torch import nn
 
-from vnn.datasets import get_dataset
-from vnn.initializers import make_random_init
+from vnn.datasets import get_x_y
 from vnn.mlp import MLP
-from vnn.sampling import create_parser, get_pyro_distr, make_pyro_model
+from vnn.sampling import create_parser
+from vnn.sampling.pyro import PyroProbabilisticModel, pyro_distr
+
+
+def gen_run_name(args: Namespace) -> str:
+    parts = [
+        f"ds={args.dataset}",
+        f"prior={args.prior}",
+        f"n_samples={args.n_samples}",
+        f"n_warmup_steps={args.n_warmup_steps}",
+        f"step_size={args.step_size}",
+    ]
+    return "__".join(parts)
 
 
 def main(args: Namespace) -> None:
@@ -16,57 +25,44 @@ def main(args: Namespace) -> None:
     # ==========
     # Data
     # ==========
-    ds = get_dataset(args.dataset)
-    rng = np.random.default_rng(args.random_state)
-
-    x = np.linspace(-1, 1, 100)
-    y = ds.y(x, rng)
-
-    xtorch = torch.as_tensor(x, dtype=torch.float32).reshape(-1, 1)
-    ytorch = torch.as_tensor(y, dtype=torch.float32).reshape(-1, 1)
+    x, y = get_x_y(args.dataset, args.random_state)
+    X = x.reshape(-1, 1)
+    Y = y.reshape(-1, 1)
 
     # ============
-    # Prob Model
+    # Model
     # ============
-    prior = get_pyro_distr(args.prior, args.prior_loc, args.prior_scale)
-    module = MLP(
-        n_features_in=1,
-        hidden_layer_sizes=args.hidden_layer_sizes,
-        n_features_out=1,
-        hidden_activation_fn=nn.Tanh,
-        weights_initializer=make_random_init(prior),
-    )
-    pyro_model = make_pyro_model(module, prior, sigma=ds.sigma)
+    fward = MLP(1, 1, args.hidden_layer_sizes)
+    prior = pyro_distr(args.prior, args.prior_loc, args.prior_scale)
+    likel = partial(pyro_distr, "normal", scale=args.likelihood_scale)
+    model = PyroProbabilisticModel(fward, prior, likel)
 
     # ============
     # MCMC
     # ============
-    nuts_kernel = NUTS(pyro_model, step_size=args.step_size)
-    mcmc = MCMC(
-        nuts_kernel, warmup_steps=args.n_warmup_steps, num_samples=args.n_samples
-    )
-    mcmc.run(xtorch, ytorch)
+    nuts = NUTS(model, step_size=args.step_size)
+    mcmc = MCMC(nuts, args.n_samples, args.n_warmup_steps)
+    mcmc.run(X, Y)
+
+    if args.output_dir:
+        import os
+        import pickle
+
+        run_name = gen_run_name(args)
+        with open(
+            os.path.join(args.output_dir, run_name + ".pkl"), "wb"
+        ) as output_file:
+            pickle.dump(mcmc, output_file)
 
     # ============
     # Plot
     # ============
     if args.n_plot_samples > 0:
         import matplotlib.pyplot as plt
-        from torch.func import functional_call
 
-        x = xtorch.detach().numpy().flatten()
-        y = ytorch.detach().numpy().flatten()
+        from vnn.plot import plot_pyro_chain
 
-        samples = mcmc.get_samples(args.n_plot_samples)
-        plt.figure(figsize=(8, 5))
-        plt.scatter(x, y, alpha=0.4, label="data")
-
-        for i in range(args.n_plot_samples):
-            W = {k: v[i, ...] for k, v in samples.items()}
-            mean = functional_call(module, W, xtorch).flatten().numpy()
-            plt.plot(x, mean, alpha=1.0, color="blue")
-
-        plt.ylabel("y")
+        plot_pyro_chain(mcmc, model.fward, X, Y, args.n_plot_samples)
         plt.show()
 
 

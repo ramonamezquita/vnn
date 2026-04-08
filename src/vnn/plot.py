@@ -5,6 +5,8 @@ Plotting utilities.
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
+from pyro.infer.mcmc import MCMC
 
 from vnn.datasets import Dataset
 
@@ -54,7 +56,9 @@ def plot_95_ci(
 
 
 def plot_dataset(
-    dataset: Dataset, ax: plt.Axes | None = None, include_forward: bool = True
+    dataset: Dataset,
+    ax: plt.Axes | None = None,
+    include_forward: bool = True,
 ) -> plt.Axes:
     if ax is None:
         ax = plt.subplot()
@@ -77,4 +81,32 @@ def plot_dataset(
             color="tab:blue",
             label="Blurred model",
         )
+    return ax
+
+
+def plot_pyro_chain(
+    mcmc: MCMC,
+    module: torch.nn.Module,
+    X: torch.Tensor,
+    Y: torch.Tensor,
+    n_plot_samples: int = 10,
+    ax: plt.Axes | None = None,
+) -> plt.Axes:
+
+    if ax is None:
+        ax = plt.subplot()
+
+    X = X.detach()
+    Y = Y.detach()
+    samples = mcmc.get_samples(n_plot_samples)
+
+    ax.scatter(X, Y, alpha=0.4, label="data")
+
+    for i in range(n_plot_samples):
+        W = {k: v[i, ...] for k, v in samples.items()}
+        mean = torch.func.functional_call(module, W, X)
+        mean = mean.flatten().numpy()
+        plt.plot(X, mean, alpha=1.0, color="blue")
+
+    ax.set_ylabel("y")
     return ax

@@ -13,7 +13,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--dataset",
         type=str,
         help="Dataset",
-        default="cubic",
+        default="cubic_poly",
     )
 
     parser.add_argument(
@@ -70,6 +70,16 @@ def create_parser() -> argparse.ArgumentParser:
         "--n_plot_samples",
         type=int,
         default=0,
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="results",
+    )
+    parser.add_argument(
+        "--likelihood_scale",
+        type=float,
+        default=1.0,
     )
 
     return parser

@@ -1,7 +1,7 @@
 import torch
 from tqdm import trange
 
-from ._probmodel import ProbabilisticModel
+from ._probabilistic import TorchProbabilisticModel
 from ._proposal import Proposal
 
 
@@ -24,7 +24,7 @@ def metropolis_hasting(
     X: torch.Tensor,
     y: torch.Tensor,
     *,
-    model: ProbabilisticModel,
+    model: TorchProbabilisticModel,
     proposal: Proposal,
     initial_guess: dict[str, torch.Tensor],
     n_iterations: int = 100,
