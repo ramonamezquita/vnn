@@ -23,16 +23,16 @@ def create_parser() -> argparse.ArgumentParser:
         default=0,
     )
     parser.add_argument(
-        "--n_samples",
-        default=1000,
+        "--num_samples",
+        default=5,
         type=int,
         help="The number of samples that need to be generated, excluding the samples discarded during the warmup phase.",
     )
     parser.add_argument(
-        "--n_warmup_steps",
+        "--warmup_steps",
         type=int,
         help="Number of warmup iterations.",
-        default=200,
+        default=5,
     )
     parser.add_argument(
         "--hidden_layer_sizes",
@@ -74,7 +74,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="results",
+        default="",
     )
     parser.add_argument(
         "--likelihood_scale",
