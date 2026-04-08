@@ -72,7 +72,12 @@ def create_parser() -> argparse.ArgumentParser:
         default=0,
     )
     parser.add_argument(
-        "--output_dir",
+        "--save",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--run_name",
         type=str,
         default="",
     )

@@ -103,7 +103,7 @@ def plot_mcmc(
 
     for i in range(n_plot_samples):
         W = {k: v[i, ...] for k, v in samples.items()}
-        mean = torch.func.functional_call(mcmc.kernel.model, W, X)
+        mean = torch.func.functional_call(mcmc.kernel.model.fward, W, X)
         mean = mean.flatten().numpy()
         plt.plot(X, mean, alpha=1.0, color="blue")
 

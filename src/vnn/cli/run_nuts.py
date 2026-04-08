@@ -8,7 +8,7 @@ from vnn.sampling import create_parser, nuts
 from vnn.sampling.pyro import PyroProbabilisticModel, pyro_distr
 
 
-def _gen_output_filename(args: Namespace) -> str:
+def _default_run_name(args: Namespace) -> str:
     parts = [
         f"ds={args.dataset}",
         f"prior={args.prior}",
@@ -33,6 +33,7 @@ if __name__ == "__main__":
 
     # ============
     # Model
+    # ============
     fward = MLP(1, 1, args.hidden_layer_sizes)
     prior = pyro_distr(args.prior, args.prior_loc, args.prior_scale)
     likel = partial(pyro_distr, "normal", scale=args.likelihood_scale)
@@ -50,10 +51,11 @@ if __name__ == "__main__":
         warmup_steps=args.warmup_steps,
     )
 
-    if args.output_dir:
+    if args.save:
         import pickle
 
-        output_file = os.path.join(args.output_dir, _gen_output_filename(args))
+        run_name = args.run_name if args.run_name else _default_run_name(args)
+        output_file = os.path.join("results", run_name + ".pkl")
         with open(output_file, "wb") as file:
             pickle.dump(mcmc, file)
 
