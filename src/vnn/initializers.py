@@ -11,7 +11,7 @@ def zeros_init(m: nn.Module) -> None:
         nn.init.zeros_(m.bias)
 
 
-def make_sigma2_bias_init(val: float) -> Callable[[nn.Module], None]:
+def make_constant_init(val: float) -> Callable[[nn.Module], None]:
 
     def init(m: nn.Module) -> None:
         if isinstance(m, nn.Linear) and m.out_features == 1:

@@ -11,12 +11,9 @@ from scipy.ndimage import gaussian_filter1d
 def make_gaussian_noise(scale: float = 1.0):
     """Factory function for Gaussian noise."""
 
-    def gaussian_noise(x: torch.Tensor, seed: int | None = None) -> torch.Tensor:
+    def gaussian_noise(x: torch.Tensor, seed: int) -> torch.Tensor:
         generator = torch.Generator()
-
-        if seed is not None:
-            generator.manual_seed(seed)
-
+        generator.manual_seed(seed)
         return scale * torch.randn(x.size(), generator=generator)
 
     return gaussian_noise
@@ -50,14 +47,11 @@ class Dataset:
     U : Callable
         Ground truth function.
 
-    F : Callable
-        Forward operator.
+    F : Callable, default=identity
+        Forward operator. Default is the identity function.
 
-    eps: Callable
-        Noise function.
-
-    rng: np.random.Generator or None, default=None
-        If None, default numpy random generator is used.
+    noise: Callable, default=None
+        Noise function. If None, standard normal noise is used.
     """
 
     def __init__(
@@ -70,14 +64,14 @@ class Dataset:
         self.x = x
         self.U = U
         self.F = F
-        if noise is None:
-            noise = make_gaussian_noise()
-        self.noise = noise
+        self.noise = noise or make_gaussian_noise()
 
-    def true(self, x: torch.Tensor) -> torch.Tensor:
+    def true(self, x: torch.Tensor | None = None) -> torch.Tensor:
+        x = self.x if x is None else x
         return self.U(x)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor | None = None) -> torch.Tensor:
+        x = self.x if x is None else x
         return self.F(self.U(x))
 
     def y(self, x: torch.Tensor | None = None, seed: int | None = None) -> torch.Tensor:
@@ -109,7 +103,7 @@ def one_block() -> Dataset:
         out[(x >= 0.75) & (x <= 1)] = 0.0
         return out
 
-    x = torch.linspace(-1, 1, 128)
+    x = torch.linspace(-1, 1, 100)
     F = make_gaussian_filter(scale=2.0)
     noise = make_gaussian_noise(scale=0.05)
     return Dataset(x, U, F, noise)

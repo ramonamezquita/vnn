@@ -4,7 +4,7 @@ import argparse
 def create_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(
-        description="Approximate neural network posterior distribution with metropolist-hasting sampling.",
+        description="Approximate neural network posterior distribution.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
     )
@@ -26,12 +26,10 @@ def create_parser() -> argparse.ArgumentParser:
         "--num_samples",
         default=5,
         type=int,
-        help="The number of samples that need to be generated, excluding the samples discarded during the warmup phase.",
     )
     parser.add_argument(
         "--warmup_steps",
         type=int,
-        help="Number of warmup iterations.",
         default=5,
     )
     parser.add_argument(

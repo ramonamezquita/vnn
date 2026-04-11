@@ -47,22 +47,25 @@ def train_ensemble(
     n_warmup_epochs: int = 5000,
     n_jobs: int = 4,
     hidden_layer_sizes: tuple[int, ...] = (100,),
-    random_state: int = 42,
-    verbose: int = 2,
     learning_rate: float = 1e-3,
-    activation_fn: str = "tanh",
-    prior: str | None = None,
-    prior_loc: float = 0.0,
-    prior_scale: float = 1.0,
+    activation_fn: Type[nn.Module] = nn.Tanh,
+    prior_distr: Distribution | None = None,
+    reg_penalty: float = 1.0,
     grad_max_norm: float = 1.0,
     metrics: tuple[str] = (),
     disable_pbar: bool = False,
+    random_state: int = 42,
+    verbose: int = 2,
 ) -> BaggingRegressor:
     """Train and evaluate ensemble of Mean-Variance Estimator (MVE) networks.
 
     Parameters
     ----------
-    dataset : str, {"piecewise", "cubic", "sinusoidal"}, default="piecewise"
+    X : torch.Tensor
+        Input data.
+
+    y : torch.Tensor
+        Target data.
 
     n_estimators : int, default=10
         Number of estimators in the ensemble
@@ -76,57 +79,46 @@ def train_ensemble(
     n_jobs: int, default=4
         The number of jobs to run in parallel for both fit and predict.
 
-    n_samples: int, default=100
-        Number of samples to train with.
-
     hidden_layer_sizes : tuple of int, default=(100,)
         Number of units in each hidden layer.
-
-    test_size : float, default=0.2
-        Test size.
-
-    random_state : int, default=42
-        Random seed.
-
-    verbose: int, default=2
-        Controls verbosity levels.
 
     learning_rate: float = 1e-3
         Learning rate.
 
-    activation_fn : str, default="tanh"
+    activation_fn : type of nn.Module, default=nn.Tanh
         Activation function for hidden layers.
 
-    prior : str or None, default=None
+    prior_distr : str or None, default=None
         Prior distribution. Used for regularization and weights initialization.
-        If None, no regularization is applied and weights are initialized using
-        PyTorch default mechanism.
 
-    prior_loc : float, default=0.0
-        Prior distribution location.
-
-    prior_scale : float, default=1.0
-        Prior distribution scale.
+    reg_penalty : float = 1.0
+        Regularization penalty factor.
 
     grad_max_norm : float, default=1.0
         Grad max norm for gradient clipping.
+
 
     metrics : tuple of str, default=()
         Metric to track during training.
 
     disable_pbar: bool, default=False
         If True, progress bar is not displayed.
+
+    random_state : int, default=42
+        Random seed.
+
+    verbose: int, default=2
+        Controls verbosity levels.
     """
-    if prior is not None:
-        prior = get_prior_distr(prior, prior_loc, prior_scale)
 
     base_regressor = MVESklearnRegressor(
         hidden_layer_sizes=hidden_layer_sizes,
         n_total_epochs=n_total_epochs,
         n_warmup_epochs=n_warmup_epochs,
         learning_rate=learning_rate,
-        activation_fn=get_activation_fn(activation_fn),
-        prior_distr=prior,
+        activation_fn=activation_fn,
+        prior_distr=prior_distr,
+        reg_penalty=reg_penalty,
         grad_max_norm=grad_max_norm,
         metrics=metrics,
         disable_pbar=disable_pbar,
@@ -146,7 +138,7 @@ def train_ensemble(
 
 
 def predict_ensemble(
-    ensemble: BaggingRegressor, X: np.ndarray
+    ensemble: BaggingRegressor, X: np.ndarray, index_to_ignore: list[int] | None = ()
 ) -> tuple[np.ndarray, np.ndarray]:
     """Generate predictions from each estimator in a fitted ensemble.
 
@@ -165,7 +157,14 @@ def predict_ensemble(
     """
     check_is_fitted(ensemble)
 
-    output = np.stack([est.predict(X) for est in ensemble.estimators_], axis=0)
+    output = np.stack(
+        [
+            est.predict(X)
+            for i, est in enumerate(ensemble.estimators_)
+            if i not in index_to_ignore
+        ],
+        axis=0,
+    )
     means = output[:, :, 0]
     vars_ = output[:, :, 1]
     mean = means.mean(axis=0)

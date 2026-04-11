@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from typing import Type
+from typing import Callable, Type
 
 import torch
 import torch.nn.functional as F
 from torch import nn
-from torch.distributions import Distribution
 
 from vnn.initializers import zeros_init
 from vnn.mlp import MLP
@@ -37,7 +36,7 @@ class Exponential(nn.Module):
 
 
 class MVELoss(nn.Module):
-    def __init__(self, eps: float = 1e-6, reduction="mean"):
+    def __init__(self, eps: float = 1e-4, reduction="mean"):
         super().__init__()
         self.eps = eps
         self.reduction = reduction
@@ -45,6 +44,8 @@ class MVELoss(nn.Module):
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         mean = input[:, 0]
         var = input[:, 1]
+        assert mean.size() == target.size()
+
         return F.gaussian_nll_loss(
             mean, target, var, eps=self.eps, reduction=self.reduction
         )
@@ -55,7 +56,7 @@ class MVE(nn.Module):
         self,
         hidden_layer_sizes: tuple[int, ...] = (100,),
         hidden_activation_fn: Type[nn.Module] = nn.Sigmoid,
-        weights_initializer: Distribution | None = None,
+        weights_initializer: Callable[[nn.Module], None] | None = None,
     ):
         super().__init__()
         self.mean = MLP(

@@ -65,9 +65,9 @@ def plot_dataset(
 
     ax.plot(
         dataset.x,
-        dataset.u_true(),
+        dataset.true(),
         linestyle="dotted",
-        label="Truth u",
+        label="True u",
         color="maroon",
         linewidth=2.5,
     )
@@ -75,7 +75,7 @@ def plot_dataset(
     if include_forward:
         ax.plot(
             dataset.x,
-            dataset.u_forward(),
+            dataset.forward(),
             linestyle="solid",
             linewidth=2.5,
             color="tab:blue",

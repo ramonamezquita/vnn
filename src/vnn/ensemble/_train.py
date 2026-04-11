@@ -9,7 +9,8 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, LRScheduler
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
-from vnn.initializers import make_random_init, make_sigma2_bias_init
+from vnn.initializers import make_constant_init, make_random_init
+
 from ._modules import MVE, calc_mve_loss
 
 
@@ -33,12 +34,34 @@ class Regularizer(Protocol):
     def __call__(self, model: nn.Module) -> torch.Tensor: ...
 
 
+class WeightsRegularizer:
+    def __init__(self, penalty_fn, lambda_: float = 1.0):
+        self.penalty_fn = penalty_fn
+        self.lambda_ = lambda_
+
+    def __call__(self, model: nn.Module) -> torch.Tensor:
+        return self.lambda_ * sum(
+            self.penalty_fn(p.flatten()) for p in model.parameters()
+        )
+
+
 def default_regularizer(model: nn.Module) -> torch.Tensor:
     return torch.tensor(0.0)
 
 
+def cauchy_penalty(weights: torch.Tensor, scale: float = 1.0) -> torch.Tensor:
+    return torch.log(1 + torch.square(weights / scale)).sum()
+
+
+def make_cauchy_reg(lambda_: float = 1.0, scale: float = 1.0) -> torch.Tensor:
+    return WeightsRegularizer(lambda w: cauchy_penalty(w, scale), lambda_)
+
+
 def make_step_fn(
-    optimizer: Optimizer, regularizer: Regularizer, grad_max_norm: float = 1.0
+    optimizer: Optimizer,
+    mean_reg: Regularizer,
+    var_reg: Regularizer = default_regularizer,
+    grad_max_norm: float = 1.0,
 ) -> StepFn:
     """Creates step function.
 
@@ -47,8 +70,11 @@ def make_step_fn(
     optimizer : Optimizer
         Torch optimizer instance.
 
-    regularizer : Regularizer
+    mean_regu : Regularizer
         Regularizer for mean subnetwork.
+
+    var_regu : Regularizer
+        Regularizer for var subnetwork.
 
     grad_max_norm : float, default=1.0
         Clip the gradient norm.
@@ -61,10 +87,9 @@ def make_step_fn(
     def step_fn(model: MVE, X: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """Updates the parameters given a batch of data and returns the loss."""
         optimizer.zero_grad()
-        loss = calc_mve_loss(model(X), y) + regularizer(model.mean)
+        loss = calc_mve_loss(model(X), y) + mean_reg(model.mean) + var_reg(model.sigma2)
         loss.backward()
-        clip_grad_norm_(model.mean.parameters(), max_norm=grad_max_norm)
-        clip_grad_norm_(model.sigma2.parameters(), max_norm=grad_max_norm)
+        clip_grad_norm_(model.parameters(), max_norm=grad_max_norm)
         optimizer.step()
         return loss
 
@@ -147,7 +172,7 @@ def fit_loop(
         scheduler.step()
 
 
-def train(
+def train_mve(
     X: torch.Tensor,
     y: torch.Tensor,
     *,
@@ -157,6 +182,7 @@ def train(
     learning_rate: float = 1e-3,
     activation_fn: Type[nn.Module] = nn.Sigmoid,
     prior_distr: Distribution | None = None,
+    reg_penalty: float = 1.0,
     grad_max_norm: float = 1.0,
     disable_pbar: bool = False,
 ) -> MVE:
@@ -196,6 +222,9 @@ def train(
         If provided, a MAP-style regularization term is applied to the mean
         subnetwork. If None, no regularization is applied.
 
+    reg_penalty : float = 1.0
+        Regularization penalty factor.
+
     grad_max_norm : float, default=1.0
         Maximum norm for gradient clipping.
 
@@ -204,17 +233,13 @@ def train(
     """
 
     weights_initializer = make_random_init(prior_distr)
+    mean_reg = make_map_regularizer(prior_distr, penalty=reg_penalty)
 
     model = MVE(
         hidden_layer_sizes=hidden_layer_sizes,
         hidden_activation_fn=activation_fn,
         weights_initializer=weights_initializer,
     )
-
-    if prior_distr is not None:
-        regularizer = make_map_regularizer(prior_distr)
-    else:
-        regularizer = default_regularizer
 
     dataloader = DataLoader(TensorDataset(X, y), batch_size=X.shape[0], shuffle=True)
 
@@ -227,7 +252,9 @@ def train(
     model.sigma2.requires_grad_(False)
     warmup_optimizer = Adam(model.mean.parameters(), lr=learning_rate)
     scheduler = CosineAnnealingLR(warmup_optimizer, T_max=n_warmup_epochs)
-    step_fn = make_step_fn(warmup_optimizer, regularizer, grad_max_norm)
+    step_fn = make_step_fn(
+        warmup_optimizer, mean_reg=mean_reg, grad_max_norm=grad_max_norm
+    )
     fit_loop(
         step_fn,
         model=model,
@@ -239,10 +266,10 @@ def train(
 
     # Set the bias of the output variance to the logmse.
     with torch.no_grad():
-        mean_pred = model(X)[:, 0].squeeze()
+        mean_pred = model.mean(X).squeeze()
         logmse: float = torch.log(torch.mean((y - mean_pred) ** 2)).item()
 
-    model.sigma2.apply(make_sigma2_bias_init(logmse))
+    model.sigma2.apply(make_constant_init(logmse))
 
     # ----------------------
     # Stage 2: Full training
@@ -253,7 +280,9 @@ def train(
     model.sigma2.requires_grad_(True)
     full_optimizer = Adam(model.parameters(), lr=learning_rate)
     scheduler = CosineAnnealingLR(full_optimizer, T_max=n_remaining_epochs)
-    step_fn = make_step_fn(full_optimizer, regularizer, grad_max_norm)
+    step_fn = make_step_fn(
+        full_optimizer, mean_reg=mean_reg, grad_max_norm=grad_max_norm
+    )
     fit_loop(
         step_fn,
         model=model,

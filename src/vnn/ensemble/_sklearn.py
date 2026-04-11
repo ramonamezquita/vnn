@@ -7,7 +7,7 @@ from sklearn.utils.validation import check_is_fitted
 from torch import nn
 from torch.distributions import Distribution
 
-from ._train import train
+from ._train import train_mve
 
 
 class MVESklearnRegressor(BaseEstimator, TransformerMixin):
@@ -69,6 +69,7 @@ class MVESklearnRegressor(BaseEstimator, TransformerMixin):
         learning_rate: float = 1e-3,
         activation_fn: Type[nn.Module] = nn.Sigmoid,
         prior_distr: Distribution | None = None,
+        reg_penalty: float = 1.0,
         grad_max_norm: float = 1.0,
         metrics: tuple[str, ...] = (),
         disable_pbar: bool = False,
@@ -79,6 +80,7 @@ class MVESklearnRegressor(BaseEstimator, TransformerMixin):
         self.learning_rate = learning_rate
         self.activation_fn = activation_fn
         self.prior_distr = prior_distr
+        self.reg_penalty = reg_penalty
         self.grad_max_norm = grad_max_norm
         self.metrics = metrics
         self.disable_pbar = disable_pbar
@@ -87,7 +89,7 @@ class MVESklearnRegressor(BaseEstimator, TransformerMixin):
         X = torch.as_tensor(X, dtype=torch.float32)
         y = torch.as_tensor(y, dtype=torch.float32)
 
-        self.model_ = train(
+        self.model_ = train_mve(
             X,
             y,
             hidden_layer_sizes=self.hidden_layer_sizes,
@@ -96,6 +98,7 @@ class MVESklearnRegressor(BaseEstimator, TransformerMixin):
             learning_rate=self.learning_rate,
             activation_fn=self.activation_fn,
             prior_distr=self.prior_distr,
+            reg_penalty=self.reg_penalty,
             grad_max_norm=self.grad_max_norm,
             disable_pbar=self.disable_pbar,
         )

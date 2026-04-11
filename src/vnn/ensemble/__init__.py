@@ -6,13 +6,13 @@ from vnn.ensemble._ensemble import (
 from vnn.ensemble._modules import MVE
 from vnn.ensemble._parser import create_parser
 from vnn.ensemble._sklearn import MVESklearnRegressor
-from vnn.ensemble._train import train
+from vnn.ensemble._train import train_mve
 
 __all__ = [
     "get_default_args",
     "predict_ensemble",
     "train_ensemble",
-    "train",
+    "train_mve",
     "create_parser",
     "MVE",
     "MVESklearnRegressor",
