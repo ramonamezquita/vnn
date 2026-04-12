@@ -6,11 +6,12 @@ import torch.nn.functional as F
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils.validation import check_is_fitted
 from torch import nn, optim
+from torch.distributions import Distribution
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
-from vnn.regularizers import Regularizer, ZeroRegularizer
+from vnn.regularizers import Regularizer, no_op_regularizer
 
 from ._modules import MVE, WeightsInitializer, make_sigma2_bias_init
 
@@ -39,6 +40,33 @@ class History:
     def last(self) -> dict[str, float]:
         """Return last saved metrics."""
         return self._history[-1].copy()
+
+
+def make_map_regularizer(distr: Distribution, penalty: float = 1.0) -> Regularizer:
+    """Create a parameter regularizer from a probability distribution.
+
+    This constructs a regularization function that penalizes model parameters
+    according to the negative log-probability under a given distribution.
+
+    Parameters
+    ----------
+    distr : Distribution
+        A PyTorch distribution object.
+
+    penalty : float, optional
+        Scaling factor for the regularization term. Defaults to 1.0.
+
+    Returns
+    -------
+    Regularizer
+    """
+
+    def map_regularizer(m: nn.Module) -> torch.Tensor:
+        return -penalty * sum(
+            distr.log_prob(p).sum() for p in m.parameters() if p.requires_grad
+        )
+
+    return map_regularizer
 
 
 class MVERegressor(BaseEstimator, TransformerMixin):
@@ -122,7 +150,7 @@ class MVERegressor(BaseEstimator, TransformerMixin):
             weights_initializer=self.weights_initializer,
         )
         model = torch.compile(model)
-        regularizer = self.regularizer or ZeroRegularizer()
+        regularizer = self.regularizer or no_op_regularizer
 
         X = torch.as_tensor(X, dtype=torch.float32)
         y = torch.as_tensor(y, dtype=torch.float32)
@@ -143,7 +171,7 @@ class MVERegressor(BaseEstimator, TransformerMixin):
             dataloader=train_dataloader,
             optimizer=warmup_optimizer,
             mean_regularizer=regularizer,
-            var_regularizer=ZeroRegularizer(),
+            var_regularizer=no_op_regularizer,
             n_epochs=self.n_warmup_epochs,
             grad_max_norm=self.grad_max_norm,
             history=self.history_,
@@ -170,7 +198,7 @@ class MVERegressor(BaseEstimator, TransformerMixin):
             dataloader=train_dataloader,
             optimizer=full_optimizer,
             mean_regularizer=regularizer,
-            var_regularizer=ZeroRegularizer(),
+            var_regularizer=no_op_regularizer,
             n_epochs=n_remaining_epochs,
             grad_max_norm=self.grad_max_norm,
             history=self.history_,
