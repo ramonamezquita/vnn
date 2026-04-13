@@ -13,7 +13,7 @@ from vnn.datasets import Dataset, get_dataset
 from vnn.regularizers import Regularizer
 
 from ._modules import WeightsInitializer
-from ._regressor import MVERegressor
+from ._sklearn import MVERegressor
 
 
 @dataclass
@@ -150,8 +150,8 @@ def run(
         metrics=metrics,
         disable_pbar=disable_pbar,
     )
-    metrics = get_metrics(ensemble)
-    weights = get_mean_weights(ensemble)
+    metrics = None
+    weights = None
 
     mean_tr, var_tr = predict(ensemble, X_tr)
     tr_io = TrainingIO(X_tr.flatten(), y_tr, mean_tr, var_tr)
@@ -211,7 +211,9 @@ def fit(
     return ensemble
 
 
-def predict(ensemble: BaggingRegressor, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def predict(
+    ensemble: BaggingRegressor, X: np.ndarray, index_to_ignore: list[int] | None = ()
+) -> tuple[np.ndarray, np.ndarray]:
     """Generate predictions from each estimator in a fitted ensemble.
 
     Parameters
@@ -229,9 +231,13 @@ def predict(ensemble: BaggingRegressor, X: np.ndarray) -> tuple[np.ndarray, np.n
     """
     check_is_fitted(ensemble)
 
-    n_estimators = ensemble.n_estimators
     output = np.stack(
-        [ensemble.estimators_[i].predict(X) for i in range(n_estimators)], axis=0
+        [
+            est.predict(X)
+            for i, est in enumerate(ensemble.estimators_)
+            if i not in index_to_ignore
+        ],
+        axis=0,
     )
     means = output[:, :, 0]
     vars_ = output[:, :, 1]

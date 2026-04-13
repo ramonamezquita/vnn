@@ -1,6 +1,6 @@
 from vnn.ensemble._modules import MLP, MVE, get_weights_initializer
 from vnn.ensemble._parser import create_parser
-from vnn.ensemble._regressor import MVERegressor
+from vnn.ensemble._sklearn import MVERegressor
 from vnn.ensemble._usage import (
     RunResult,
     TrainingIO,
