@@ -20,7 +20,10 @@ mlflow.db-journal
 artifact_downloads/
 
 # jupyter
+notebooks/
 *.ipynb
 
 # media
 *.pdf
+*.pkl
+

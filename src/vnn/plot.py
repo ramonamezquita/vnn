@@ -46,9 +46,9 @@ def plot_dataset(
         dataset.x,
         dataset.u_true(),
         linestyle="dotted",
-        label="Truth u",
-        color="maroon",
-        linewidth=2.5,
+        label="True u",
+        color="red",
+        linewidth=1.5,
     )
 
     if include_forward:

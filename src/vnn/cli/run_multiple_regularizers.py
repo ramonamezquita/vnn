@@ -5,7 +5,7 @@ from typing import Any
 
 import mlflow
 
-from vnn.ensemble import create_parser, run
+from vnn.mve import create_parser, run
 from vnn.mlflow_logging import log_to_mlflow
 
 EXPERIMENT_NAME = "many_regularizers_many_blocks"
