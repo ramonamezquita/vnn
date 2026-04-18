@@ -1,5 +1,5 @@
 import inspect
-from typing import Any
+from typing import Any, Type
 
 import torch
 from sklearn.base import check_is_fitted
@@ -35,7 +35,7 @@ def train_ensemble(
     random_state: int = 42,
     verbose: int = 2,
     learning_rate: float = 1e-3,
-    activation_fn: nn.Module = nn.Sigmoid(),
+    activation_fn: Type[nn.Module] = nn.Tanh,
     weights_initializer: WeightsInitializer | None = None,
     regularizer: Regularizer | None = None,
     grad_max_norm: float = 1.0,
@@ -76,7 +76,7 @@ def train_ensemble(
     learning_rate: float = 1e-3
         Learning rate.
 
-    activation_fn : nn.Module, default=nn.Sigmoid()
+    activation_fn : type of nn.Module, default=nn.Tanh
         Activation function for hidden layers.
 
     weights_initializer: WeightsInitializer or None, default=None
@@ -118,7 +118,7 @@ def train_ensemble(
 
 
 def predict_ensemble(
-    ensemble: BaggingRegressor, X: torch.Tensor, to_ignore: tuple[int, ...] = ()
+    ensemble: BaggingRegressor, X: torch.Tensor, index_to_ignore: tuple[int, ...] = ()
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Generate predictions from each estimator in a fitted ensemble.
 
@@ -129,6 +129,9 @@ def predict_ensemble(
 
     X : np.array
         Input tensor.
+
+    index_to_ignore: tuple of int, default=()
+        Index of estimators to ignore during prediction.
 
     Returns
     -------
@@ -141,7 +144,7 @@ def predict_ensemble(
         [
             torch.Tensor(est.predict(X))
             for i, est in enumerate(ensemble.estimators_)
-            if i not in to_ignore
+            if i not in index_to_ignore
         ],
         axis=0,
     )

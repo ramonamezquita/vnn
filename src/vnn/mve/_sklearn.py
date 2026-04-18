@@ -1,4 +1,4 @@
-from typing import Self
+from typing import Self, Type
 
 import numpy as np
 import torch
@@ -10,7 +10,7 @@ from ._modules import WeightsInitializer
 from ._train import Regularizer, no_op_regularizer, train_mve
 
 
-class MVERegressor(BaseEstimator, TransformerMixin):
+class SKMVERegressor(BaseEstimator, TransformerMixin):
     """Sklearn compatible Mean Variance Estimator (MVE) network.
 
     Scikit-learn compatibility allows the estimator to be used with ensemble
@@ -64,7 +64,7 @@ class MVERegressor(BaseEstimator, TransformerMixin):
         n_total_epochs: int = 10000,
         n_warmup_epochs: int = 5000,
         learning_rate: float = 1e-3,
-        activation_fn: nn.Module = nn.Sigmoid,
+        activation_fn: Type[nn.Module] = nn.Tanh,
         weights_initializer: WeightsInitializer | None = None,
         regularizer: Regularizer = no_op_regularizer,
         grad_max_norm: float = 1.0,

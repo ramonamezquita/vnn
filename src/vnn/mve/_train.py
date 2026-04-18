@@ -1,3 +1,5 @@
+from typing import Type
+
 import torch
 from torch import nn, optim
 from torch.nn.utils import clip_grad_norm_
@@ -5,7 +7,9 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, LRScheduler
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
-from ._modules import MVE, MVELoss, WeightsInitializer, make_sigma2_bias_init
+from vnn.initializers import make_sigma2_bias_init
+
+from ._modules import MVE, MVELoss, WeightsInitializer
 from ._regularizers import Regularizer, no_op_regularizer
 
 CRITERION = MVELoss()
@@ -55,7 +59,7 @@ def train_mve(
     n_total_epochs: int = 10000,
     n_warmup_epochs: int = 5000,
     learning_rate: float = 1e-3,
-    activation_fn: nn.Module = nn.Sigmoid,
+    activation_fn: Type[nn.Module] = nn.Tanh,
     weights_initializer: WeightsInitializer | None = None,
     regularizer: Regularizer = no_op_regularizer,
     grad_max_norm: float = 1.0,
@@ -88,7 +92,7 @@ def train_mve(
     learning_rate : float, default=1e-3
         Learning rate for both training stages.
 
-    activation_fn : Type[nn.Module], default=nn.Sigmoid
+    activation_fn : Type[nn.Module], default=nn.Tanh
         Activation function used in hidden layers.
 
     prior_distr : Distribution or None, optional
@@ -142,7 +146,6 @@ def train_mve(
     with torch.no_grad():
         mean_pred = model(X)[:, 0].squeeze()
         logmse: float = torch.log(torch.mean((y - mean_pred) ** 2)).item()
-
     model.sigma2.apply(make_sigma2_bias_init(logmse))
 
     # ----------------------
