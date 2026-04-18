@@ -8,9 +8,9 @@ from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
 from vnn.initializers import make_sigma2_bias_init
+from vnn.regularizers import Regularizer, no_op_regularizer
 
 from ._modules import MVE, MVELoss, WeightsInitializer
-from ._regularizers import Regularizer, no_op_regularizer
 
 CRITERION = MVELoss()
 
@@ -65,49 +65,63 @@ def train_mve(
     grad_max_norm: float = 1.0,
     disable_pbar: bool = False,
 ) -> MVE:
-    """Train a mean-variance estimation (MVE) model using a two-stage procedure.
+    """Train a mean-variance estimation (MVE) neural network via two-stage optimization.
 
-    The training is split into two stages:
-    1. warm-up: stage where only the mean subnetwork is trained while the variance subnetwork is frozen.
-    2. full training: stage where both subnetworks are jointly optimized.
+    The model learns to predict both the conditional mean and variance of the target.
+    Training proceeds in two stages:
+
+    1. Warm-up stage:
+       Only the mean subnetwork is trained while the variance subnetwork is frozen.
+       This stabilizes training by first learning a reasonable estimate of E[Y | X].
+
+    2. Full training stage:
+       Both mean and variance subnetworks are jointly optimized using the full loss.
+
+    After the warm-up stage, the variance subnetwork bias is initialized using the
+    log mean squared error (log-MSE) of the mean predictions to provide a sensible
+    starting scale for variance learning.
 
     Parameters
     ----------
-    X : torch.Tensor
-        Input features of shape (n_samples, n_features).
+    X : torch.Tensor of shape (n_samples, n_features)
+        Input features.
 
-    y : torch.Tensor
-        Target values of shape (n_samples,).
+    y : torch.Tensor of shape (n_samples,)
+        Target values.
 
-    hidden_layer_sizes : tuple of int, optional
-        Sizes of hidden layers in both subnetworks
+    hidden_layer_sizes : tuple of int, default=(100,)
+        Sizes of hidden layers shared by both subnetworks.
 
     n_total_epochs : int, default=10000
-        Total number of training epochs across both stages.
+        Total number of training epochs (warm-up + full training).
 
     n_warmup_epochs : int, default=5000
-        Number of epochs for the warm-up stage (mean network only).
-        Must be less than or equal to `n_total_epochs`.
+        Number of epochs in the warm-up stage. Must satisfy
+        0 <= n_warmup_epochs <= n_total_epochs.
 
     learning_rate : float, default=1e-3
-        Learning rate for both training stages.
+        Learning rate used by the Adam optimizer in both stages.
 
     activation_fn : Type[nn.Module], default=nn.Tanh
-        Activation function used in hidden layers.
+        Activation function applied in hidden layers.
 
-    prior_distr : Distribution or None, optional
-        Prior distribution over model parameters used for regularization.
-        If provided, a MAP-style regularization term is applied to the mean
-        subnetwork. If None, no regularization is applied.
+    weights_initializer : WeightsInitializer or None, default=None
+        Optional callable used to initialize model weights.
 
-    reg_penalty : float = 1.0
-        Regularization penalty factor.
+    regularizer : Regularizer, default=no_op_regularizer
+        Regularization function applied to the mean subnetwork during training.
 
     grad_max_norm : float, default=1.0
-        Maximum norm for gradient clipping.
+        Maximum gradient norm for clipping to improve training stability.
 
     disable_pbar : bool, default=False
-        If True, disables the progress bar.
+        If True, disables progress bar output during training.
+
+    Returns
+    -------
+    model : MVE
+        Trained MVE model. The forward pass returns a tensor of shape
+        (n_samples, 2), where the columns correspond to predicted mean and variance.
     """
 
     model = MVE(

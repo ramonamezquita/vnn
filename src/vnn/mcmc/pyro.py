@@ -30,27 +30,27 @@ class PyroProbabilisticModel:
 
     Parameters
     ----------
-    fward : torch.nn.Module
+    module : torch.nn.Module
         The deterministic neural network representing the forward computation.
         Its parameters are treated as latent variables.
 
     prior : pyro.distributions.Distribution
         Prior distribution over all model parameters.
 
-    likel : Callable[[torch.Tensor], pyro.distributions.Distribution]
+    likelihood : Callable[[torch.Tensor], pyro.distributions.Distribution]
         A callable that maps the model output (mean) to a likelihood
         distribution over observations.
     """
 
     def __init__(
         self,
-        fward: nn.Module,
+        module: nn.Module,
         prior: dist.Distribution,
-        likel: Callable[[torch.Tensor], dist.Distribution],
+        likelihood: Callable[[torch.Tensor], dist.Distribution],
     ):
-        self.fward = fward
+        self.module = module
         self.prior = prior
-        self.likel = likel
+        self.likelihood = likelihood
 
     def __call__(self, X: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """Run the probabilistic model with observed data.
@@ -70,16 +70,16 @@ class PyroProbabilisticModel:
         """
 
         # Define priors over torch parameters.
-        # We apply `expand` followed by `to_event` to reshape the 
+        # We apply `expand` followed by `to_event` to reshape the
         # prior into a multivariate distribution over the full tensor.
         new_params: dict[str, torch.Tensor] = {}
-        for name, p in self.fward.named_parameters():
+        for name, p in self.module.named_parameters():
             prior_reshaped = self.prior.expand(p.size()).to_event(p.dim())
             new_params[name] = pyro.sample(name, prior_reshaped)
 
         # Forward call.
-        mean: torch.Tensor = functional_call(self.fward, new_params, X)
+        mean: torch.Tensor = functional_call(self.module, new_params, X)
         assert mean.shape == y.shape
 
         # Evaluate likelihood using `pyro.sample`.
-        return pyro.sample("obs", self.likel(mean), obs=y)
+        return pyro.sample("obs", self.likelihood(mean), obs=y)
