@@ -68,8 +68,8 @@ def plot_dataset(
         dataset.true(),
         linestyle="dotted",
         label="True u",
-        color="maroon",
-        linewidth=2.5,
+        color="red",
+        linewidth=1.5,
     )
 
     if include_forward:

@@ -20,6 +20,7 @@ mlflow.db-journal
 artifact_downloads/
 
 # jupyter
+notebooks/
 *.ipynb
 notebooks/
 
@@ -28,3 +29,5 @@ notebooks/
 
 # results
 results/
+*.pkl
+

@@ -1,19 +1,20 @@
-from typing import Callable, Type
+from typing import Type
 
 import torch
 from torch import nn
+
+from vnn.initializers import WeightsInitializer
 
 
 class MLP(nn.Module):
     def __init__(
         self,
         n_features_in: int,
-        n_features_out: int,
         hidden_layer_sizes: tuple[int, ...],
-        *,
+        n_features_out: int,
         hidden_activation_fn: Type[nn.Module] = nn.Tanh,
         output_activation_fn: Type[nn.Module] = nn.Identity,
-        weights_initializer: Callable[[nn.Module], None] | None = None,
+        weights_initializer: WeightsInitializer | None = None,
     ):
         super().__init__()
         layer_sizes = (n_features_in,) + tuple(hidden_layer_sizes)

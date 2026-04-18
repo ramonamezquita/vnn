@@ -1,13 +1,15 @@
 import inspect
 from typing import Any, Type
 
-import numpy as np
+import torch
 from sklearn.base import check_is_fitted
 from sklearn.ensemble import BaggingRegressor
 from torch import nn
-from torch.distributions import Cauchy, Distribution, Laplace, Normal
 
-from ._sklearn import MVESklearnRegressor
+from vnn.regularizers import Regularizer
+
+from ._modules import WeightsInitializer
+from ._sklearn import MVERegressor
 
 
 def get_default_args(**kwargs) -> dict[str, Any]:
@@ -21,43 +23,25 @@ def get_default_args(**kwargs) -> dict[str, Any]:
     return default_args
 
 
-def get_activation_fn(name: str) -> Type[nn.Module]:
-    name_to_function = {"tanh": nn.Tanh, "sigmoid": nn.Sigmoid, "relu": nn.ReLU}
-
-    if name not in name_to_function:
-        raise ValueError(f"Activation function {name} is not supported.")
-
-    return name_to_function[name]
-
-
-def get_prior_distr(name: str, loc: float = 0.0, scale: float = 1.0) -> Distribution:
-    name_to_distr = {"normal": Normal, "cauchy": Cauchy, "laplace": Laplace}
-    if name not in name_to_distr:
-        raise ValueError(f"Prior distribution {name} not supported.")
-
-    return name_to_distr[name](loc, scale)
-
-
 def train_ensemble(
-    X,
-    y,
+    X: torch.Tensor,
+    y: torch.Tensor,
     *,
     n_estimators: int = 10,
     n_total_epochs: int = 10000,
     n_warmup_epochs: int = 5000,
     n_jobs: int = 4,
     hidden_layer_sizes: tuple[int, ...] = (100,),
-    learning_rate: float = 1e-3,
-    activation_fn: Type[nn.Module] = nn.Tanh,
-    prior_distr: Distribution | None = None,
-    reg_penalty: float = 1.0,
-    grad_max_norm: float = 1.0,
-    metrics: tuple[str] = (),
-    disable_pbar: bool = False,
     random_state: int = 42,
     verbose: int = 2,
+    learning_rate: float = 1e-3,
+    activation_fn: Type[nn.Module] = nn.Tanh,
+    weights_initializer: WeightsInitializer | None = None,
+    regularizer: Regularizer | None = None,
+    grad_max_norm: float = 1.0,
+    disable_pbar: bool = False,
 ) -> BaggingRegressor:
-    """Train and evaluate ensemble of Mean-Variance Estimator (MVE) networks.
+    """Train and evaluate ensemble of MVE networks.
 
     Parameters
     ----------
@@ -66,6 +50,7 @@ def train_ensemble(
 
     y : torch.Tensor
         Target data.
+
 
     n_estimators : int, default=10
         Number of estimators in the ensemble
@@ -82,45 +67,40 @@ def train_ensemble(
     hidden_layer_sizes : tuple of int, default=(100,)
         Number of units in each hidden layer.
 
+    random_state : int, default=42
+        Random seed.
+
+    verbose: int, default=2
+        Controls verbosity levels.
+
     learning_rate: float = 1e-3
         Learning rate.
 
     activation_fn : type of nn.Module, default=nn.Tanh
         Activation function for hidden layers.
 
-    prior_distr : str or None, default=None
-        Prior distribution. Used for regularization and weights initialization.
+    weights_initializer: WeightsInitializer or None, default=None
+        Weights initializer for mean subnetwork.
 
-    reg_penalty : float = 1.0
-        Regularization penalty factor.
+    regularizer : Regularizer or None, default=None
+        Regularizer during training.
 
     grad_max_norm : float, default=1.0
         Grad max norm for gradient clipping.
 
 
-    metrics : tuple of str, default=()
-        Metric to track during training.
-
     disable_pbar: bool, default=False
         If True, progress bar is not displayed.
-
-    random_state : int, default=42
-        Random seed.
-
-    verbose: int, default=2
-        Controls verbosity levels.
     """
-
-    base_regressor = MVESklearnRegressor(
+    base_regressor = MVERegressor(
         hidden_layer_sizes=hidden_layer_sizes,
         n_total_epochs=n_total_epochs,
         n_warmup_epochs=n_warmup_epochs,
         learning_rate=learning_rate,
         activation_fn=activation_fn,
-        prior_distr=prior_distr,
-        reg_penalty=reg_penalty,
+        weights_initializer=weights_initializer,
+        regularizer=regularizer,
         grad_max_norm=grad_max_norm,
-        metrics=metrics,
         disable_pbar=disable_pbar,
     )
 
@@ -138,17 +118,20 @@ def train_ensemble(
 
 
 def predict_ensemble(
-    ensemble: BaggingRegressor, X: np.ndarray, index_to_ignore: list[int] | None = ()
-) -> tuple[np.ndarray, np.ndarray]:
+    ensemble: BaggingRegressor, X: torch.Tensor, index_to_ignore: tuple[int, ...] = ()
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Generate predictions from each estimator in a fitted ensemble.
 
     Parameters
     ----------
     ensemble : BaggingRegressor
-        A fitted sklearn.ensemble.BaggingRegressor instance.
+        A fitted instance.
 
     X : np.array
         Input tensor.
+
+    index_to_ignore: tuple of int, default=()
+        Index of estimators to ignore during prediction.
 
     Returns
     -------
@@ -157,9 +140,9 @@ def predict_ensemble(
     """
     check_is_fitted(ensemble)
 
-    output = np.stack(
+    output = torch.stack(
         [
-            est.predict(X)
+            torch.Tensor(est.predict(X))
             for i, est in enumerate(ensemble.estimators_)
             if i not in index_to_ignore
         ],
@@ -168,5 +151,5 @@ def predict_ensemble(
     means = output[:, :, 0]
     vars_ = output[:, :, 1]
     mean = means.mean(axis=0)
-    var = (vars_ + np.square(means)).mean(axis=0) - np.square(mean)
+    var = (vars_ + torch.square(means)).mean(axis=0) - torch.square(mean)
     return mean, var

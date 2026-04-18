@@ -1,19 +1,14 @@
 from __future__ import annotations
 
-from typing import Callable, Type
+from typing import Type
 
 import torch
 import torch.nn.functional as F
-from torch import nn
+from torch import Tensor, nn
+from torch.nn.modules.loss import _Loss
 
-from vnn.initializers import zeros_init
+from vnn.initializers import WeightsInitializer, zeros_init
 from vnn.mlp import MLP
-
-
-def calc_mve_loss(
-    input: torch.Tensor, target: torch.Tensor, eps: float = 1e-6, reduction="mean"
-) -> torch.Tensor:
-    return MVELoss(eps, reduction)(input, target)
 
 
 class SoftplusWithEps(nn.Module):
@@ -35,28 +30,12 @@ class Exponential(nn.Module):
         return torch.exp(x.clamp(max=88.0)) + self.eps
 
 
-class MVELoss(nn.Module):
-    def __init__(self, eps: float = 1e-4, reduction="mean"):
-        super().__init__()
-        self.eps = eps
-        self.reduction = reduction
-
-    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        mean = input[:, 0]
-        var = input[:, 1]
-        assert mean.size() == target.size()
-
-        return F.gaussian_nll_loss(
-            mean, target, var, eps=self.eps, reduction=self.reduction
-        )
-
-
 class MVE(nn.Module):
     def __init__(
         self,
         hidden_layer_sizes: tuple[int, ...] = (100,),
-        hidden_activation_fn: Type[nn.Module] = nn.Sigmoid,
-        weights_initializer: Callable[[nn.Module], None] | None = None,
+        hidden_activation_fn: Type[nn.Module] = nn.Tanh,
+        weights_initializer: WeightsInitializer | None = None,
     ):
         super().__init__()
         self.mean = MLP(
@@ -77,3 +56,17 @@ class MVE(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.cat((self.mean(x), self.sigma2(x)), dim=1)
+
+
+class MVELoss(_Loss):
+    def __init__(self, eps: float = 1e-4, reduction: str = "mean"):
+        super().__init__()
+        self.eps = eps
+        self.reduction = reduction
+
+    def forward(self, input: Tensor, target: Tensor) -> torch.Tensor:
+        mean = input[:, 0]
+        var = input[:, 1]
+        return F.gaussian_nll_loss(
+            mean, target, var, reduction=self.reduction, eps=self.eps
+        )
