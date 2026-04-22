@@ -47,13 +47,6 @@ class SKMVERegressor(BaseEstimator, TransformerMixin):
 
     disable_pbar: bool, default=False
         If True, progress bar is not displayed.
-
-    References
-    ----------
-    [1] Nix, D. A. and Weigend, A. S., "Estimating the mean and variance of the
-    target probability distribution", Proceedings of 1994 IEEE International
-    Conference on Neural Networks (ICNN'94), Orlando, FL, USA, 1994, pp. 55-60
-    vol.1, doi: 10.1109/ICNN.1994.374138.
     """
 
     default_metrics: tuple[str] = ("loss",)
@@ -83,6 +76,9 @@ class SKMVERegressor(BaseEstimator, TransformerMixin):
         self.disable_pbar = disable_pbar
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> Self:
+
+        X = torch.as_tensor(X, dtype=torch.float32)
+        y = torch.as_tensor(y, dtype=torch.float32)
 
         self.model_ = train_mve(
             X,

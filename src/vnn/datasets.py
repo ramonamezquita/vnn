@@ -4,6 +4,7 @@ Synthetic datasets for regression experiments.
 
 from typing import Callable, Protocol
 
+import matplotlib.pyplot as plt
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
 
@@ -89,6 +90,35 @@ class Dataset:
         x_obs = self.x[indices]
         y_obs = self.u_forward()[indices] + self.eps(x_obs, rng)
         return x_obs, y_obs
+
+    def plot_true(self, ax: plt.Axes | None = None) -> plt.Axes:
+        if ax is None:
+            ax = plt.subplot()
+
+        ax.plot(
+            self.x,
+            self.u_true(),
+            linestyle="dotted",
+            label="True u",
+            color="red",
+            linewidth=1.5,
+        )
+
+        return ax
+
+    def plot_forward(self, ax: plt.Axes | None = None) -> plt.Axes:
+        if ax is None:
+            ax = plt.subplot()
+
+        ax.plot(
+            self.x,
+            self.u_forward(),
+            linestyle="solid",
+            linewidth=2.5,
+            color="tab:blue",
+            label="Blurred model",
+        )
+        return ax
 
 
 # -------------------

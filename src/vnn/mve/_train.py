@@ -26,7 +26,14 @@ def _training_loop(
     scheduler: LRScheduler | None = None,
     disable_pbar: bool = False,
 ) -> None:
-    """Standard training loop."""
+    """Train an MVE model for a fixed number of epochs.
+
+    The loss is composed of:
+        - a data term (`CRITERION`)
+        - regularization applied to the mean and variance subnetworks.
+
+    See `train_mve` for description of parameters.
+    """
 
     pbar = tqdm(range(n_epochs), desc="Epoch", disable=disable_pbar)
     model.train()
@@ -34,17 +41,15 @@ def _training_loop(
         running_loss: float = 0.0
         n_batches: int = 0
         for X, y in dataloader:
-            # fmt: off
-            optimizer.zero_grad()                                    # Reset gradients.
-            dat_loss = CRITERION(model(X), y)                        # NLL.
-            reg_loss = mean_reg(model.mean) + var_reg(model.sigma2)  # Regularizers.
-            tot_loss = dat_loss + reg_loss                           # Total loss (NLL + Reg).
-            tot_loss.backward()                                      # Set gradients.
-            clip_grad_norm_(model.parameters(), grad_max_norm)       # Clip gradients.
-            optimizer.step()                                         # Update weights.
-            running_loss += tot_loss.item()                          # Record loss.
+            optimizer.zero_grad()
+            dat_loss = CRITERION(model(X), y)
+            reg_loss = mean_reg(model.mean) + var_reg(model.sigma2)
+            tot_loss = dat_loss + reg_loss
+            tot_loss.backward()
+            clip_grad_norm_(model.parameters(), grad_max_norm)
+            optimizer.step()
+            running_loss += tot_loss.item()
             n_batches += 1
-            # fmt: on
 
         avg_loss = running_loss / n_batches
         pbar.set_postfix(loss=f"{avg_loss:.4f}")
@@ -122,6 +127,13 @@ def train_mve(
     model : MVE
         Trained MVE model. The forward pass returns a tensor of shape
         (n_samples, 2), where the columns correspond to predicted mean and variance.
+
+    References
+    ----------
+    [1] Nix, D. A. and Weigend, A. S., "Estimating the mean and variance of the
+    target probability distribution", Proceedings of 1994 IEEE International
+    Conference on Neural Networks (ICNN'94), Orlando, FL, USA, 1994, pp. 55-60
+    vol.1, doi: 10.1109/ICNN.1994.374138.
     """
 
     model = MVE(
@@ -129,12 +141,9 @@ def train_mve(
         hidden_activation_fn=activation_fn,
         weights_initializer=weights_initializer,
     )
-    model = torch.compile(model)
-    mean_reg = regularizer or no_op_regularizer
-
-    X = torch.as_tensor(X, dtype=torch.float32)
-    y = torch.as_tensor(y, dtype=torch.float32)
+    model: MVE = torch.compile(model)
     dataloader = DataLoader(TensorDataset(X, y), batch_size=X.shape[0], shuffle=True)
+    mean_reg = regularizer or no_op_regularizer
 
     # ----------------------
     # Stage 1: Warm-up
@@ -158,7 +167,7 @@ def train_mve(
 
     # Set the bias of the output variance to the logmse.
     with torch.no_grad():
-        mean_pred = model(X)[:, 0].squeeze()
+        mean_pred = model.mean(X).squeeze()
         logmse: float = torch.log(torch.mean((y - mean_pred) ** 2)).item()
     model.sigma2.apply(make_sigma2_bias_init(logmse))
 
