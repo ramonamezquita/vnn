@@ -1,70 +1,146 @@
 import argparse
 
+import jax.numpy as jnp
+import jax.random as random
+import matplotlib.pyplot as plt
+from numpyro.infer import Predictive
+
+from vnn.bnn import BNN
+from vnn.datasets import get_dataset
+from vnn.inference import nuts
+from vnn.priors import get_prior, supported_priors
+
+_CLI_DESCRIPTION = """
+Run NUTS to do inference on a Bayesian neural network.
+"""
+
 
 def create_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Bayesian neural network.")
-    parser.add_argument("--num_samples", default=1000, type=int)
-    parser.add_argument("--num_warmup", default=1000, type=int)
-    parser.add_argument("--num_data", default=100, type=int)
-    parser.add_argument("--hidden_sizes", nargs="*", default=[10], type=int)
-    parser.add_argument("--seed", default=0, type=int)
-    parser.add_argument("--step_size", default=1e-3, type=float)
+    parser = argparse.ArgumentParser(description=_CLI_DESCRIPTION, allow_abbrev=False)
+    parser.add_argument(
+        "--dataset",
+        default="1d_block",
+        type=str,
+        help="Training dataset.",
+    )
+    parser.add_argument(
+        "--num_samples",
+        default=1000,
+        type=int,
+        help="Number of samples to generate from the Markov chain.",
+    )
+    parser.add_argument(
+        "--num_warmup",
+        default=1000,
+        type=int,
+        help="Number of warmup steps.",
+    )
+    parser.add_argument(
+        "--num_chains",
+        default=1,
+        type=int,
+        help="Number of parallel chains.",
+    )
+    parser.add_argument(
+        "--num_data",
+        default=100,
+        type=int,
+        help="Number of training data points.",
+    )
+    parser.add_argument(
+        "--hidden_layer_sizes",
+        nargs="*",
+        default=[10],
+        type=int,
+        help="Hidden layer sizes.",
+    )
+    parser.add_argument(
+        "--seed",
+        default=0,
+        type=int,
+        help="Random seed.",
+    )
+    parser.add_argument(
+        "--step_size",
+        default=1e-3,
+        type=float,
+        help="Step size for the Markov chain",
+    )
+    parser.add_argument(
+        "--sigma_obs",
+        default=1.0,
+        type=float,
+        help="Standard deviaton for the Gaussian likelihood",
+    )
+    parser.add_argument(
+        "--prior",
+        default="normal",
+        type=str,
+        choices=supported_priors(),
+        help="Prior distribution.",
+    )
+    parser.add_argument(
+        "--prior_loc",
+        default=0.0,
+        type=float,
+        help="Prior location.",
+    )
+    parser.add_argument(
+        "--prior_scale",
+        default=1.0,
+        type=float,
+        help="Prior scale.",
+    )
+    parser.add_argument("--infer_sigma_obs", default=False, action="store_true")
     return parser
 
 
-if __name__ == "__main__":
-    import numpyro
+def main(args: argparse.ArgumentParser) -> None:
 
-    assert numpyro.__version__.startswith("0.20.1")
+    rng_key, rng_subkey = random.split(random.key(args.seed))
 
-    import jax.numpy as jnp
-    import jax.random as random
-    import matplotlib.pyplot as plt
-    import numpy as np
-    import numpyro
-    import numpyro.distributions as dist
-
-    from vnn.bnn import BNN, mcmc, vpredict_mean
-    from vnn.datasets import get_dataset
-
-    parser = create_parser()
-    args = parser.parse_args()
-
-    # get data
-    ds = get_dataset("1d_block")
+    # Get data.
+    ds = get_dataset(args.dataset)
     x, y = ds.sample(args.num_data, args.seed)
     X = jnp.array(x.reshape(-1, 1))
     Y = jnp.array(y.reshape(-1, 1))
 
-    # run inference
-    rng_key_mcmc, rng_key_predict = random.split(random.key(args.seed))
-    model = BNN(hidden_sizes=tuple(args.hidden_sizes), prior=dist.Normal)
-    result = mcmc(
-        model,
-        X,
-        Y,
-        rng_key_mcmc,
-        step_size=args.step_size,
-        num_warmup=args.num_warmup,
-        num_samples=args.num_samples,
+    # Run MCMC.
+    mcmc_args = {
+        "step_size": args.step_size,
+        "num_warmup": args.num_warmup,
+        "num_samples": args.num_samples,
+        "num_chains": args.num_chains,
+    }
+    prior = get_prior(args.prior, args.prior_loc, args.prior_scale)
+    hidden_layer_sizes = tuple(args.hidden_layer_sizes)
+    sigma_obs = None if args.infer_sigma_obs else args.sigma_obs
+    model = BNN(
+        hidden_layer_sizes=hidden_layer_sizes,
+        prior=prior,
+        sigma_obs=sigma_obs,
     )
-    samples = result.get_samples()
+    mcmc = nuts(rng_key, model, X, Y, **mcmc_args)
+    posterior_samples = mcmc.get_samples()
 
-    # compute mean and confidence interval
-    mean_samples = vpredict_mean(model, X, rng_key_predict, samples)
-    mean_avg = jnp.mean(mean_samples[..., 0], axis=0)  # <= mean of means
-    mean_ci = np.percentile(mean_samples[..., 0], [5.0, 95.0], axis=0)
+    # Prediction.
+    predictive = Predictive(model, posterior_samples, return_sites=["f"])
+    predictions = predictive(rng_subkey, X)["f"]
 
-    # make plots
+    mean = jnp.mean(predictions[..., 0], axis=0)  # <= mean of means
+    perc = jnp.percentile(predictions[..., 0], jnp.array([5.0, 95.0]), axis=0)
+
+    # Plots.
     _, ax = plt.subplots()
     ax = ds.plot_true(ax)
-    ax.fill_between(
-        X[:, 0],
-        mean_ci[0, :],
-        mean_ci[1, :],
-        color="purple",
-        alpha=0.2,
-        label=r"90\% C.I.",
-    )
-    ax.plot(x, mean_avg, color="purple", label="Mean")
+    ax.fill_between(X[:, 0], perc[0, :], perc[1, :], color="purple", alpha=0.2)
+    ax.plot(x, mean, color="purple", label="Mean")
     ax.legend()
+    plt.show()
+
+
+if __name__ == "__main__":
+    parser = create_parser()
+    args = parser.parse_args()
+    print(f"Called `run_mcmc` with args: {vars(args)}")
+    main(args)

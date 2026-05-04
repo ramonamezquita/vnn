@@ -16,6 +16,7 @@ dependencies = [
     "matplotlib>=3.10.7",
     "mlflow>=3.9.0",
     "numpyro>=0.20.1",
+    "optax>=0.2.6",
     "pandas>=2.3.3",
     "pyro-ppl>=1.9.1",
     "pytest>=9.0.2",

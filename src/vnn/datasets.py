@@ -100,7 +100,7 @@ class Dataset:
             self.u_true(),
             linestyle="dotted",
             label="True u",
-            color="red",
+            color="darkred",
             linewidth=1.5,
         )
 
@@ -114,7 +114,7 @@ class Dataset:
             self.x,
             self.u_forward(),
             linestyle="solid",
-            linewidth=2.5,
+            linewidth=2,
             color="tab:blue",
             label="Blurred model",
         )
